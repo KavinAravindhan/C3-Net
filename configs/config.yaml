@@ -1,0 +1,34 @@
+# Data Configuration
+data:
+  dataset_name: "mimic_eye"
+  image_size: 224  # ViT standard input size
+  patch_size: 16   # Creates 14×14 = 196 patches
+  
+  # Gaze processing
+  gaze_heatmap_size: 224  # Align with image size
+  max_fixations: 50       # Maximum fixation sequence length
+  fixation_sigma: 10      # Gaussian kernel sigma for heatmap generation
+
+# Model Configuration  
+model:
+  # Image Encoder (ViT)
+  image_encoder:
+    type: "vit_base_patch16_224"
+    pretrained: true
+    embed_dim: 768
+    num_heads: 12
+    num_layers: 12
+    
+  # Gaze Encoder
+  gaze_encoder:
+    spatial_hidden_dim: 256
+    temporal_hidden_dim: 256
+    lstm_layers: 2
+    dropout: 0.3
+
+# Training Configuration (for later)
+training:
+  batch_size: 32
+  num_epochs: 40
+  learning_rate: 1e-4
+  weight_decay: 0.01
