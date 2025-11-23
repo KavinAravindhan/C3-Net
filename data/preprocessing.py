@@ -18,8 +18,8 @@ class ImagePreprocessor:
         self.image_size = image_size
         
         # ImageNet normalization (standard for ViT)
-        self.mean = np.array([0.485, 0.456, 0.406])
-        self.std = np.array([0.229, 0.224, 0.225])
+        self.mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+        self.std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
     
     def __call__(self, image_path):
         """
@@ -44,7 +44,7 @@ class ImagePreprocessor:
         image = (image - self.mean) / self.std  # [224, 224, 3]
         
         # Convert to PyTorch tensor [C, H, W]
-        image_tensor = torch.from_numpy(image).permute(2, 0, 1)  # [3, 224, 224]
+        image_tensor = torch.from_numpy(image).permute(2, 0, 1).float()  # [3, 224, 224]
         
         return image_tensor
 

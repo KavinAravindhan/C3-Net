@@ -1,0 +1,51 @@
+python3 data/mimic_eye_adapter.py 
+Found 3192 patient directories
+✓ Successfully processed: 1083 images
+✗ Skipped: 0 images
+✓ Saved to: /media/16TB_Storage/kavin/dataset/processed_mimic_eye
+Split distribution:
+  - Train: 851
+  - Val:   123
+  - Test:  109
+Dataset ready!
+    root_dir='/media/16TB_Storage/kavin/dataset/processed_mimic_eye'
+
+
+python3 test_preprocessing.py
+Testing Preprocessing and Encoding Pipeline
+
+1. Loading dataset...
+Loaded 851 samples for train split
+
+2. Loading one batch...
+  Images shape: torch.Size([4, 3, 224, 224])
+  Gaze heatmaps shape: torch.Size([4, 224, 224])
+  Gaze sequences shape: torch.Size([4, 50, 3])
+  Labels shape: torch.Size([4])
+
+3. Initializing encoders...
+  Using device: cuda
+Initialized vit_base_patch16_224
+  Embedding dim: 768
+  Num patches: 196
+  Pretrained: True
+  Frozen: False
+Initialized GazeEncoder
+  Spatial hidden dim: 256
+  Temporal hidden dim: 256
+  Num patches: 196
+Initialized GazePredictor
+  Input dim: 768
+  Num patches: 196
+
+4. Running forward pass...
+  Image patch features: torch.Size([4, 196, 768])
+  Image CLS token: torch.Size([4, 768])
+  Gaze patch weights: torch.Size([4, 196, 1])
+  Gaze features: torch.Size([4, 512])
+  Predicted gaze: torch.Size([4, 196])
+
+5. Visualizing results...
+  Saved visualization to 'test_visualization.png'
+
+✓ All tests passed!

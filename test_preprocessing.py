@@ -27,7 +27,7 @@ def test_preprocessing_and_encoding():
     # Initialize dataset
     print("\n1. Loading dataset...")
     dataset = MIMICEyeDataset(
-        root_dir='data/processed_mimic_eye',  # UPDATE THIS PATH
+        root_dir='/media/16TB_Storage/kavin/dataset/processed_mimic_eye',  # UPDATE THIS PATH
         split='train',
         config=config
     )

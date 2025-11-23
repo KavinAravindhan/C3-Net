@@ -3,156 +3,201 @@ import pandas as pd
 import json
 import numpy as np
 from pathlib import Path
+from tqdm import tqdm
 
 
 def prepare_mimic_eye_metadata(data_root, output_dir='data/processed_mimic_eye'):
     """
-    Convert MIMIC-Eye dataset into the format expected by our MIMICEyeDataset class.
+    Convert MIMIC-Eye EyeGaze dataset into format expected by our dataset class.
     
-    Creates:
-    - metadata.json with train/val/test splits
-    - Organized gaze JSON files
+    Structure:
+    - Reads from patient_*/EyeGaze/fixations.csv
+    - Matches with patient_*/CXR-JPG/s*/DICOM_ID.jpg
+    - Creates metadata.json with train/val/test splits
     """
-    print("Processing MIMIC-Eye dataset...")
-    
-    # Paths
-    master_sheet_path = os.path.join(data_root, 'files', 'master_sheet.csv')
-    fixations_dir = os.path.join(data_root, 'files', 'fixations')
-    images_dir = os.path.join(data_root, 'files', 'images')
+    print("="*60)
+    print("Processing MIMIC-Eye EyeGaze Dataset")
+    print("="*60)
     
     # Create output directories
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(os.path.join(output_dir, 'images'), exist_ok=True)
     os.makedirs(os.path.join(output_dir, 'gaze'), exist_ok=True)
     
-    # Load master sheet
-    print(f"Loading master sheet from {master_sheet_path}")
-    df = pd.read_csv(master_sheet_path)
+    # Get all patient directories
+    patient_dirs = sorted([d for d in os.listdir(data_root) 
+                          if d.startswith('patient_')])
     
-    print(f"Found {len(df)} samples")
-    print(f"Columns: {df.columns.tolist()}")
+    print(f"\nFound {len(patient_dirs)} patient directories")
+    print("Scanning for EyeGaze data...\n")
     
-    # Create metadata
     metadata = {}
+    processed_count = 0
+    skipped_count = 0
     
-    # Process each sample
-    for idx, row in df.iterrows():
-        # Extract IDs (adjust column names based on actual MIMIC-Eye structure)
-        subject_id = row.get('subject_id', row.get('patient_id', f'p{idx}'))
-        study_id = row.get('study_id', row.get('dicom_id', f's{idx}'))
+    # Process each patient
+    for patient_id in tqdm(patient_dirs, desc="Processing patients"):
+        patient_path = os.path.join(data_root, patient_id)
+        eyegaze_path = os.path.join(patient_path, 'EyeGaze')
         
-        sample_id = f"{subject_id}_{study_id}"
-        
-        # Find image path
-        image_path = os.path.join(images_dir, f"{subject_id}", f"{study_id}.jpg")
-        if not os.path.exists(image_path):
-            # Try alternative structure
-            image_path = os.path.join(images_dir, f"{sample_id}.jpg")
-        
-        if not os.path.exists(image_path):
-            print(f"Warning: Image not found for {sample_id}, skipping")
+        # Check if patient has EyeGaze data
+        if not os.path.exists(eyegaze_path):
             continue
         
-        # Find fixation data
-        fixation_path = os.path.join(fixations_dir, f"{sample_id}.csv")
-        if not os.path.exists(fixation_path):
-            print(f"Warning: Fixation data not found for {sample_id}, skipping")
+        fixations_csv = os.path.join(eyegaze_path, 'fixations.csv')
+        if not os.path.exists(fixations_csv):
             continue
         
-        # Read fixations
+        # Load fixations
         try:
-            fixations_df = pd.read_csv(fixation_path)
-            fixations = process_fixations(fixations_df)
+            fix_df = pd.read_csv(fixations_csv)
         except Exception as e:
-            print(f"Error processing fixations for {sample_id}: {e}")
+            print(f"Error reading {patient_id}/EyeGaze/fixations.csv: {e}")
+            skipped_count += 1
             continue
         
-        # Save gaze JSON
-        gaze_output_path = os.path.join(output_dir, 'gaze', f"{sample_id}.json")
-        with open(gaze_output_path, 'w') as f:
-            json.dump({'fixations': fixations}, f)
-        
-        # Copy image (or create symlink)
-        import shutil
-        image_output_path = os.path.join(output_dir, 'images', f"{sample_id}.jpg")
-        if not os.path.exists(image_output_path):
-            shutil.copy(image_path, image_output_path)
-        
-        # Determine label (MIMIC-Eye is for abnormality detection)
-        # Adjust based on your specific task
-        label = row.get('label', 0)  # Default to 0 if no label
-        
-        # Assign split (80/10/10)
-        rand = np.random.random()
-        if rand < 0.8:
-            split = 'train'
-        elif rand < 0.9:
-            split = 'val'
-        else:
-            split = 'test'
-        
-        metadata[sample_id] = {
-            'split': split,
-            'label': int(label),
-            'subject_id': str(subject_id),
-            'study_id': str(study_id)
-        }
+        # Process each unique DICOM_ID in this patient's fixations
+        for dicom_id in fix_df['DICOM_ID'].unique():
+            # Find the corresponding image
+            image_path = find_image_for_dicom(patient_path, dicom_id)
+            
+            if image_path is None:
+                skipped_count += 1
+                continue
+            
+            # Extract fixations for this image
+            image_fixations = fix_df[fix_df['DICOM_ID'] == dicom_id]
+            fixations_list = process_fixations(image_fixations)
+            
+            if len(fixations_list) == 0:
+                skipped_count += 1
+                continue
+            
+            # Create sample ID
+            sample_id = f"{patient_id}_{dicom_id}"
+            
+            # Save gaze JSON
+            gaze_output_path = os.path.join(output_dir, 'gaze', f"{sample_id}.json")
+            with open(gaze_output_path, 'w') as f:
+                json.dump({'fixations': fixations_list}, f)
+            
+            # Copy image
+            import shutil
+            image_output_path = os.path.join(output_dir, 'images', f"{sample_id}.jpg")
+            if not os.path.exists(image_output_path):
+                shutil.copy(image_path, image_output_path)
+            
+            # Assign split (80/10/10 split)
+            rand = np.random.random()
+            if rand < 0.8:
+                split = 'train'
+            elif rand < 0.9:
+                split = 'val'
+            else:
+                split = 'test'
+            
+            # For now, binary classification: normal vs abnormal
+            # You can refine this based on master_sheet labels
+            label = 0  # Default to normal, update based on your needs
+            
+            metadata[sample_id] = {
+                'split': split,
+                'label': int(label),
+                'patient_id': patient_id,
+                'dicom_id': dicom_id,
+                'num_fixations': len(fixations_list)
+            }
+            
+            processed_count += 1
     
     # Save metadata
     metadata_path = os.path.join(output_dir, 'metadata.json')
     with open(metadata_path, 'w') as f:
         json.dump(metadata, f, indent=2)
     
-    print(f"\n✓ Processed {len(metadata)} samples")
-    print(f"✓ Saved to {output_dir}")
+    # Print summary
+    print("\n" + "="*60)
+    print("PROCESSING COMPLETE")
+    print("="*60)
+    print(f"✓ Successfully processed: {processed_count} images")
+    print(f"✗ Skipped: {skipped_count} images")
+    print(f"\n✓ Saved to: {output_dir}")
+    print(f"\nSplit distribution:")
     print(f"  - Train: {sum(1 for v in metadata.values() if v['split'] == 'train')}")
-    print(f"  - Val: {sum(1 for v in metadata.values() if v['split'] == 'val')}")
-    print(f"  - Test: {sum(1 for v in metadata.values() if v['split'] == 'test')}")
+    print(f"  - Val:   {sum(1 for v in metadata.values() if v['split'] == 'val')}")
+    print(f"  - Test:  {sum(1 for v in metadata.values() if v['split'] == 'test')}")
     
     return output_dir
+
+
+def find_image_for_dicom(patient_path, dicom_id):
+    """
+    Find the JPG image file for a given DICOM_ID.
+    
+    Structure: patient_path/CXR-JPG/s{study_id}/{dicom_id}.jpg
+    """
+    cxr_path = os.path.join(patient_path, 'CXR-JPG')
+    
+    if not os.path.exists(cxr_path):
+        return None
+    
+    # Search through study directories
+    for item in os.listdir(cxr_path):
+        if not item.startswith('s'):
+            continue
+        
+        study_path = os.path.join(cxr_path, item)
+        if not os.path.isdir(study_path):
+            continue
+        
+        # Look for the image file
+        image_file = os.path.join(study_path, f"{dicom_id}.jpg")
+        if os.path.exists(image_file):
+            return image_file
+    
+    return None
 
 
 def process_fixations(fixations_df):
     """
     Convert fixation DataFrame to our expected format.
     
-    Expected columns in MIMIC-Eye CSV: x, y, duration (or similar)
+    Uses FPOGX, FPOGY (already normalized 0-1) and FPOGD (duration).
     """
     fixations = []
     
-    # Get image dimensions (MIMIC-Eye images are typically 1024x1024 or similar)
-    # Adjust these based on actual image dimensions
-    img_width = 1024
-    img_height = 1024
-    
     for idx, row in fixations_df.iterrows():
-        # Extract coordinates (adjust column names as needed)
-        x = row.get('x', row.get('x_position', row.get('gaze_x', 0)))
-        y = row.get('y', row.get('y_position', row.get('gaze_y', 0)))
-        duration = row.get('duration', row.get('fixation_duration', 200))
+        # Get normalized coordinates (already in 0-1 range)
+        x = row['FPOGX']
+        y = row['FPOGY']
+        duration = row['FPOGD']
         
-        # Normalize coordinates to [0, 1]
-        x_norm = float(x) / img_width
-        y_norm = float(y) / img_height
+        # Skip invalid fixations
+        if pd.isna(x) or pd.isna(y) or pd.isna(duration):
+            continue
         
-        # Clip to valid range
-        x_norm = np.clip(x_norm, 0, 1)
-        y_norm = np.clip(y_norm, 0, 1)
+        # Ensure values are in valid range
+        x = float(np.clip(x, 0, 1))
+        y = float(np.clip(y, 0, 1))
+        duration = float(max(duration, 0))  # Duration should be positive
         
         fixations.append({
-            'x': float(x_norm),
-            'y': float(y_norm),
-            'duration': float(duration)
+            'x': x,
+            'y': y,
+            'duration': duration * 1000  # Convert to milliseconds if needed
         })
     
     return fixations
 
 
 if __name__ == '__main__':
-    # Update this path to your MIMIC-Eye download location
-    data_root = 'data/mimic_eye/physionet.org/files/mimic-eye/1.0.0'
+    # Update this path to your MIMIC-Eye location
+    data_root = '/media/16TB_Storage/kavin/dataset/physionet.org/files/mimic-eye-multimodal-datasets/1.0.0/mimic-eye'
+
+    original_output_dir = '/media/16TB_Storage/kavin/dataset/processed_mimic_eye'
     
-    output_dir = prepare_mimic_eye_metadata(data_root)
-    print(f"\nDataset ready at: {output_dir}")
-    print("\nUpdate your test_preprocessing.py to use this path:")
+    output_dir = prepare_mimic_eye_metadata(data_root, original_output_dir)
+    
+    print(f"\n{'='*60}")
+    print("Dataset ready!")
     print(f"  root_dir='{output_dir}'")
