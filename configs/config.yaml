@@ -29,10 +29,14 @@ model:
 # Training Configuration (for later)
 training:
   batch_size: 32
-  # num_epochs: 40
-  num_epochs: 5  # Start with 5 to test
+  num_epochs: 30
+  # num_epochs: 5  # Start with 5 to test
   learning_rate: 0.0001
   weight_decay: 0.01
   device: 'cuda'  # 'cuda' or 'cpu'
   gpu_id: 1       # 0 or 1 (which GPU to use)
   checkpoint_dir: '/media/16TB_Storage/kavin/models/c3-net' 
+  
+  # Loss weights
+  lambda_classification: 1.0
+  lambda_gaze_pred: 0.5  # Gaze prediction auxiliary loss

@@ -9,7 +9,7 @@ import json
 from datetime import datetime
 
 from data.dataset import MIMICEyeDataset, collate_fn
-from models.encoders import ImageEncoder, GazeEncoder, ImageOnlyClassifier
+from models.encoders import ImageEncoder, GazeEncoder, ImageOnlyClassifier, GazePredictor
 from models.attention import GazeGuidedFusion
 
 
@@ -63,13 +63,20 @@ class C3NetTrainer:
             num_classes=2,
             dropout=0.3
         ).to(self.device)
+
+        self.gaze_predictor = GazePredictor(
+            input_dim=config['model']['image_encoder']['embed_dim'],
+            hidden_dim=256,
+            num_patches=196
+        ).to(self.device)
         
         # Combine all parameters for optimizer
         self.all_params = (
             list(self.image_encoder.parameters()) +
             list(self.gaze_encoder.parameters()) +
             list(self.gaze_fusion.parameters()) +
-            list(self.classifier.parameters())
+            list(self.classifier.parameters()) +
+            list(self.gaze_predictor.parameters())
         )
         
         # Initialize optimizer
@@ -81,6 +88,11 @@ class C3NetTrainer:
         
         # Loss function
         self.criterion = nn.CrossEntropyLoss()
+        self.gaze_criterion = nn.MSELoss()
+
+        # Loss weights
+        self.lambda_classification = 1.0
+        self.lambda_gaze_pred = 0.3
         
         # Metrics tracking
         self.train_losses = []
@@ -129,11 +141,25 @@ class C3NetTrainer:
                 patch_features, cls_token, gaze_weights, gaze_features
             )
             
-            # 4. Classify
+            # 4. Predict gaze from image (auxiliary task)
+            predicted_gaze = self.gaze_predictor(patch_features)  # [B, 196]
+            # Reshape to match gaze_weights [B, 196, 1]
+            target_gaze = gaze_weights.squeeze(-1)  # [B, 196]
+
+            # 5. Classify
             logits = self.classifier(fused_features)
+
+            # Compute losses
+            classification_loss = self.criterion(logits, labels)
+            gaze_prediction_loss = self.gaze_criterion(predicted_gaze, target_gaze)
+
+            # Total loss
+            loss = (self.lambda_classification * classification_loss + 
+                    self.lambda_gaze_pred * gaze_prediction_loss)
             
-            # Compute loss
-            loss = self.criterion(logits, labels)
+            # Track individual losses (optional, for monitoring)
+            if batch_idx == 0:  # Print first batch of epoch
+                print(f"\n  Losses: cls={classification_loss.item():.4f}, gaze={gaze_prediction_loss.item():.4f}")
             
             # Backward pass
             loss.backward()
@@ -190,10 +216,22 @@ class C3NetTrainer:
                 fused_features, attention_map = self.gaze_fusion(
                     patch_features, cls_token, gaze_weights, gaze_features
                 )
-                logits = self.classifier(fused_features)
                 
-                # Compute loss
-                loss = self.criterion(logits, labels)
+                # Predict gaze from image (auxiliary task)
+                predicted_gaze = self.gaze_predictor(patch_features)  # [B, 196]
+                # Reshape to match gaze_weights [B, 196, 1]
+                target_gaze = gaze_weights.squeeze(-1)  # [B, 196]
+
+                # Classify
+                logits = self.classifier(fused_features)
+
+                # Compute losses
+                classification_loss = self.criterion(logits, labels)
+                gaze_prediction_loss = self.gaze_criterion(predicted_gaze, target_gaze)
+
+                # Total loss
+                loss = (self.lambda_classification * classification_loss + 
+                        self.lambda_gaze_pred * gaze_prediction_loss)
                 
                 # Track metrics
                 total_loss += loss.item()
