@@ -1,0 +1,8 @@
+To see whats inside a directory
+find /media/16TB_Storage/kavin/dataset | sed 's/[^\/]*\//|   /g;s/|   \([^|]\)/\+--- \1/' | head -n 50
+
+python3 data/mimic_eye_adapter.py
+python3 test_preprocessing.py
+python3 test_level1_fusion.py
+python3 test_classifier.py
+python3 train.py

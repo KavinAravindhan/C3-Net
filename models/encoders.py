@@ -311,3 +311,53 @@ class GazePredictor(nn.Module):
         predicted_weights = torch.softmax(predicted_weights, dim=1)  # [B, 196]
         
         return predicted_weights
+
+class ImageOnlyClassifier(nn.Module):
+    """
+    Student classifier that works with only image features at inference.
+    
+    During training, it can use:
+    - Raw image CLS token [B, 768]
+    - Gaze-guided fused features [B, 768] (from Level 1)
+    
+    At inference, it uses only image features.
+    
+    Architecture:
+        Input: [B, 768] or [B, 1536] (if concatenating both)
+        → MLP with hidden layers
+        → Output: [B, num_classes=2]
+    """
+    
+    def __init__(self, input_dim=768, hidden_dim=512, num_classes=2, dropout=0.3):
+        super(ImageOnlyClassifier, self).__init__()
+        
+        self.classifier = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),  # [B, 768] → [B, 512]
+            nn.LayerNorm(hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            
+            nn.Linear(hidden_dim, hidden_dim // 2),  # [B, 512] → [B, 256]
+            nn.LayerNorm(hidden_dim // 2),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            
+            nn.Linear(hidden_dim // 2, num_classes)  # [B, 256] → [B, 2]
+        )
+        
+        print(f"Initialized ImageOnlyClassifier")
+        print(f"  Input dim: {input_dim}")
+        print(f"  Hidden dim: {hidden_dim}")
+        print(f"  Num classes: {num_classes}")
+        print(f"  Dropout: {dropout}")
+    
+    def forward(self, features):
+        """
+        Args:
+            features: [B, D] - can be image CLS, fused features, or concatenation
+            
+        Returns:
+            logits: [B, num_classes=2] - raw scores (not probabilities)
+        """
+        logits = self.classifier(features)  # [B, 2]
+        return logits

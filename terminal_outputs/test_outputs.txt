@@ -1,0 +1,386 @@
+python3 data/mimic_eye_adapter.py 
+Found 3192 patient directories
+✓ Successfully processed: 1083 images
+✗ Skipped: 0 images
+✓ Saved to: /media/16TB_Storage/kavin/dataset/processed_mimic_eye
+Split distribution:
+  - Train: 851
+  - Val:   123
+  - Test:  109
+Dataset ready!
+    root_dir='/media/16TB_Storage/kavin/dataset/processed_mimic_eye'
+
+
+python3 test_preprocessing.py
+Testing Preprocessing and Encoding Pipeline
+
+1. Loading dataset...
+Loaded 851 samples for train split
+
+2. Loading one batch...
+  Images shape: torch.Size([4, 3, 224, 224])
+  Gaze heatmaps shape: torch.Size([4, 224, 224])
+  Gaze sequences shape: torch.Size([4, 50, 3])
+  Labels shape: torch.Size([4])
+
+3. Initializing encoders...
+  Using device: cuda
+Initialized vit_base_patch16_224
+  Embedding dim: 768
+  Num patches: 196
+  Pretrained: True
+  Frozen: False
+Initialized GazeEncoder
+  Spatial hidden dim: 256
+  Temporal hidden dim: 256
+  Num patches: 196
+Initialized GazePredictor
+  Input dim: 768
+  Num patches: 196
+
+4. Running forward pass...
+  Image patch features: torch.Size([4, 196, 768])
+  Image CLS token: torch.Size([4, 768])
+  Gaze patch weights: torch.Size([4, 196, 1])
+  Gaze features: torch.Size([4, 512])
+  Predicted gaze: torch.Size([4, 196])
+
+5. Visualizing results...
+  Saved visualization to 'test_visualization.png'
+
+✓ All tests passed!
+
+
+python3 test_level1_fusion.py
+
+Testing Level 1: Gaze-Guided Visual Attention
+
+1. Loading dataset...
+Loaded 851 samples for train split
+  Loaded batch with 4 samples
+
+2. Initializing models...
+Initialized vit_base_patch16_224
+  Embedding dim: 768
+  Num patches: 196
+  Pretrained: True
+  Frozen: False
+Initialized GazeEncoder
+  Spatial hidden dim: 256
+  Temporal hidden dim: 256
+  Num patches: 196
+Initialized GazeGuidedAttention
+  Image dim: 768
+  Gaze dim: 512
+  Num heads: 8
+
+3. Running forward pass...
+  ✓ Image encoded: patches torch.Size([4, 196, 768]), CLS torch.Size([4, 768])
+  ✓ Gaze encoded: weights torch.Size([4, 196, 1]), features torch.Size([4, 512])
+  ✓ Fusion complete: fused torch.Size([4, 768]), attention torch.Size([4, 196])
+
+4. Analyzing attention patterns...
+  Sample 0: Correlation between gaze and learned attention = 0.185
+  Sample 1: Correlation between gaze and learned attention = 0.065
+
+5. Visualizing attention...
+  Saved visualization to 'level1_fusion_visualization.png'
+
+✓ Level 1 Fusion Test Complete!
+
+Key Insights:
+  • Gaze weights guide the attention mechanism
+  • Learned attention can deviate to learn optimal patterns
+  • Fused features combine raw image + gaze-guided attention
+  • Ready for downstream classification!
+
+
+python3 test_classifier.py
+
+Testing Image-Only Classifier (Student Path)
+
+1. Loading dataset...
+Loaded 851 samples for train split
+
+2. Initializing models...
+Initialized vit_base_patch16_224
+  Embedding dim: 768
+  Num patches: 196
+  Pretrained: True
+  Frozen: False
+Initialized GazeEncoder
+  Spatial hidden dim: 256
+  Temporal hidden dim: 256
+  Num patches: 196
+Initialized GazeGuidedAttention
+  Image dim: 768
+  Gaze dim: 512
+  Num heads: 8
+Initialized ImageOnlyClassifier
+  Input dim: 768
+  Hidden dim: 512
+  Num classes: 2
+  Dropout: 0.3
+
+3. Running full pipeline...
+  ✓ Fused features: torch.Size([4, 768])
+  ✓ Logits: torch.Size([4, 2])
+
+4. Classification results:
+  Logits:
+tensor([[-0.6541, -0.6609],
+        [-0.1222, -0.1803],
+        [ 0.1918, -0.1661],
+        [-0.3732,  0.2620]], device='cuda:0')
+
+  Probabilities (class 0 / class 1):
+tensor([[0.5017, 0.4983],
+        [0.5145, 0.4855],
+        [0.5885, 0.4115],
+        [0.3463, 0.6537]], device='cuda:0')
+
+  Predictions: tensor([0, 0, 0, 1], device='cuda:0')
+  Ground truth: tensor([0, 0, 0, 0], device='cuda:0')
+
+  Accuracy (untrained): 75.0%
+
+✓ Image-Only Classifier Test Complete!
+
+Pipeline verified:
+  Image → Encoder → Gaze Fusion → Classifier → Predictions ✓
+
+Ready for training!
+
+
+python3 train.py
+Loading datasets...
+Loaded 851 samples for train split
+Loaded 123 samples for val split
+Using GPU 1
+
+Initializing C3-Net Training
+
+1. Loading models...
+Initialized vit_base_patch16_224
+  Embedding dim: 768
+  Num patches: 196
+  Pretrained: True
+  Frozen: False
+Initialized GazeEncoder
+  Spatial hidden dim: 256
+  Temporal hidden dim: 256
+  Num patches: 196
+Initialized GazeGuidedAttention
+  Image dim: 768
+  Gaze dim: 512
+  Num heads: 8
+Initialized ImageOnlyClassifier
+  Input dim: 768
+  Hidden dim: 512
+  Num classes: 2
+  Dropout: 0.3
+
+✓ Models initialized on cuda:1
+✓ Total trainable parameters: 90,758,402
+
+Starting Training
+
+Total epochs: 5
+Train samples: 851
+Val samples: 123
+Batch size: 32
+
+================================================================================
+Epoch 1/5
+================================================================================
+Epoch 1 [Train]: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 27/27 [00:34<00:00,  1.27s/it, loss=0.0011, acc=99.88%]
+Epoch 1 [Val]: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 4/4 [00:05<00:00,  1.31s/it, loss=0.0004, acc=100.00%]
+
+Epoch 1 Summary:
+  Train Loss: 0.0195 | Train Acc: 99.88%
+  Val Loss:   0.0004 | Val Acc:   100.00%
+  ✓ New best model saved! (Val Acc: 100.00%)
+
+================================================================================
+Epoch 2/5
+================================================================================
+Epoch 2 [Train]: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 27/27 [00:13<00:00,  1.98it/s, loss=0.0008, acc=100.00%]
+Epoch 2 [Val]: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 4/4 [00:02<00:00,  1.38it/s, loss=0.0002, acc=100.00%]
+
+Epoch 2 Summary:
+  Train Loss: 0.0008 | Train Acc: 100.00%
+  Val Loss:   0.0002 | Val Acc:   100.00%
+
+================================================================================
+Epoch 3/5
+================================================================================
+Epoch 3 [Train]: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 27/27 [00:13<00:00,  2.03it/s, loss=0.0003, acc=100.00%]
+Epoch 3 [Val]: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 4/4 [00:02<00:00,  1.38it/s, loss=0.0001, acc=100.00%]
+
+Epoch 3 Summary:
+  Train Loss: 0.0005 | Train Acc: 100.00%
+  Val Loss:   0.0001 | Val Acc:   100.00%
+
+================================================================================
+Epoch 4/5
+================================================================================
+Epoch 4 [Train]: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 27/27 [00:13<00:00,  2.07it/s, loss=0.0003, acc=100.00%]
+Epoch 4 [Val]: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 4/4 [00:02<00:00,  1.38it/s, loss=0.0001, acc=100.00%]
+
+Epoch 4 Summary:
+  Train Loss: 0.0003 | Train Acc: 100.00%
+  Val Loss:   0.0001 | Val Acc:   100.00%
+
+================================================================================
+Epoch 5/5
+================================================================================
+Epoch 5 [Train]: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 27/27 [00:13<00:00,  2.03it/s, loss=0.0004, acc=100.00%]
+Epoch 5 [Val]: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 4/4 [00:02<00:00,  1.37it/s, loss=0.0001, acc=100.00%]
+
+Epoch 5 Summary:
+  Train Loss: 0.0003 | Train Acc: 100.00%
+  Val Loss:   0.0001 | Val Acc:   100.00%
+
+================================================================================
+Training Complete!
+================================================================================
+Best validation accuracy: 100.00%
+
+
+python3 data/mimic_eye_adapter.py
+
+Processing MIMIC-Eye EyeGaze Dataset with Labels
+
+Loading master sheet from:
+  /media/16TB_Storage/kavin/dataset/physionet.org/files/mimic-eye-multimodal-datasets/1.0.0/mimic-eye/spreadsheets/EyeGaze/master_sheet_with_updated_stayId.csv
+✓ Loaded 1083 records from master sheet
+✓ Created label mapping for 1083 images
+
+Label distribution:
+  Normal (0):   360
+  Abnormal (1): 723
+
+Found 3192 patient directories
+Processing patients with gaze data...
+
+Processing patients: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 3192/3192 [00:11<00:00, 280.72it/s]
+
+PROCESSING COMPLETE
+
+✓ Successfully processed: 1083 images
+
+Skipped:
+  - No label in master sheet: 0
+  - Image not found: 0
+  - No valid fixations: 0
+
+✓ Saved to: /media/16TB_Storage/kavin/dataset/processed_mimic_eye
+
+Final split distribution:
+
+Train: 873 samples
+  - Normal (0):   294
+  - Abnormal (1): 579
+
+Val: 108 samples
+  - Normal (0):   36
+  - Abnormal (1): 72
+
+Test: 102 samples
+  - Normal (0):   30
+  - Abnormal (1): 72
+
+Dataset ready with proper labels!
+
+python3 train.py
+Loading datasets...
+Loaded 873 samples for train split
+Loaded 108 samples for val split
+Using GPU 1
+
+Initializing C3-Net Training
+
+1. Loading models...
+Initialized vit_base_patch16_224
+  Embedding dim: 768
+  Num patches: 196
+  Pretrained: True
+  Frozen: False
+Initialized GazeEncoder
+  Spatial hidden dim: 256
+  Temporal hidden dim: 256
+  Num patches: 196
+Initialized GazeGuidedAttention
+  Image dim: 768
+  Gaze dim: 512
+  Num heads: 8
+Initialized ImageOnlyClassifier
+  Input dim: 768
+  Hidden dim: 512
+  Num classes: 2
+  Dropout: 0.3
+
+✓ Models initialized on cuda:1
+✓ Total trainable parameters: 90,758,402
+
+Starting Training
+
+Total epochs: 5
+Train samples: 873
+Val samples: 108
+Batch size: 32
+
+================================================================================
+Epoch 1/5
+================================================================================
+Epoch 1 [Train]: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 28/28 [00:14<00:00,  1.99it/s, loss=0.6557, acc=63.46%]
+Epoch 1 [Val]: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 4/4 [00:02<00:00,  1.38it/s, loss=0.6377, acc=66.67%]
+
+Epoch 1 Summary:
+  Train Loss: 0.6777 | Train Acc: 63.46%
+  Val Loss:   0.6363 | Val Acc:   66.67%
+  ✓ New best model saved! (Val Acc: 66.67%)
+
+================================================================================
+Epoch 2/5
+================================================================================
+Epoch 2 [Train]: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 28/28 [00:13<00:00,  2.13it/s, loss=0.6778, acc=64.49%]
+Epoch 2 [Val]: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 4/4 [00:02<00:00,  1.45it/s, loss=0.6393, acc=66.67%]
+
+Epoch 2 Summary:
+  Train Loss: 0.6620 | Train Acc: 64.49%
+  Val Loss:   0.6376 | Val Acc:   66.67%
+
+================================================================================
+Epoch 3/5
+================================================================================
+Epoch 3 [Train]: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 28/28 [00:12<00:00,  2.16it/s, loss=0.5561, acc=65.18%]
+Epoch 3 [Val]: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 4/4 [00:02<00:00,  1.44it/s, loss=0.6376, acc=66.67%]
+
+Epoch 3 Summary:
+  Train Loss: 0.6525 | Train Acc: 65.18%
+  Val Loss:   0.6364 | Val Acc:   66.67%
+
+================================================================================
+Epoch 4/5
+================================================================================
+Epoch 4 [Train]: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 28/28 [00:13<00:00,  2.11it/s, loss=0.6473, acc=65.52%]
+Epoch 4 [Val]: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 4/4 [00:02<00:00,  1.44it/s, loss=0.6454, acc=66.67%]
+
+Epoch 4 Summary:
+  Train Loss: 0.6511 | Train Acc: 65.52%
+  Val Loss:   0.6423 | Val Acc:   66.67%
+
+================================================================================
+Epoch 5/5
+================================================================================
+Epoch 5 [Train]: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 28/28 [00:13<00:00,  2.13it/s, loss=0.6404, acc=65.52%]
+Epoch 5 [Val]: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 4/4 [00:02<00:00,  1.45it/s, loss=0.6543, acc=66.67%]
+
+Epoch 5 Summary:
+  Train Loss: 0.6490 | Train Acc: 65.52%
+  Val Loss:   0.6099 | Val Acc:   66.67%
+
+Training Complete!
+
+Best validation accuracy: 66.67%

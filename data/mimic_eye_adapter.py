@@ -15,9 +15,43 @@ def prepare_mimic_eye_metadata(data_root, output_dir='data/processed_mimic_eye')
     - Matches with patient_*/CXR-JPG/s*/DICOM_ID.jpg
     - Creates metadata.json with train/val/test splits
     """
+
+    """
+    Convert MIMIC-Eye EyeGaze dataset into format expected by our dataset class.
+    
+    NOW WITH PROPER LABELS from master_sheet.csv
+    """
+
     print("="*60)
-    print("Processing MIMIC-Eye EyeGaze Dataset")
+    print("Processing MIMIC-Eye EyeGaze Dataset with Labels")
     print("="*60)
+    
+    # Load master sheet with diagnosis labels
+    master_sheet_path = os.path.join(
+        data_root, 
+        'spreadsheets', 
+        'EyeGaze', 
+        'master_sheet_with_updated_stayId.csv'
+    )
+    
+    print(f"\nLoading master sheet from:")
+    print(f"  {master_sheet_path}")
+    
+    if not os.path.exists(master_sheet_path):
+        raise FileNotFoundError(f"Master sheet not found: {master_sheet_path}")
+    
+    master_df = pd.read_csv(master_sheet_path)
+    print(f"✓ Loaded {len(master_df)} records from master sheet")
+    
+    # Create DICOM_ID to label mapping
+    dicom_to_label = create_label_mapping(master_df)
+    print(f"✓ Created label mapping for {len(dicom_to_label)} images")
+    
+    # Print label distribution
+    label_counts = pd.Series(list(dicom_to_label.values())).value_counts()
+    print(f"\nLabel distribution:")
+    print(f"  Normal (0):   {label_counts.get(0, 0)}")
+    print(f"  Abnormal (1): {label_counts.get(1, 0)}")
     
     # Create output directories
     os.makedirs(output_dir, exist_ok=True)
@@ -29,11 +63,13 @@ def prepare_mimic_eye_metadata(data_root, output_dir='data/processed_mimic_eye')
                           if d.startswith('patient_')])
     
     print(f"\nFound {len(patient_dirs)} patient directories")
-    print("Scanning for EyeGaze data...\n")
+    print("Processing patients with gaze data...\n")
     
     metadata = {}
     processed_count = 0
-    skipped_count = 0
+    skipped_no_label = 0
+    skipped_no_image = 0
+    skipped_no_fixations = 0
     
     # Process each patient
     for patient_id in tqdm(patient_dirs, desc="Processing patients"):
@@ -53,16 +89,20 @@ def prepare_mimic_eye_metadata(data_root, output_dir='data/processed_mimic_eye')
             fix_df = pd.read_csv(fixations_csv)
         except Exception as e:
             print(f"Error reading {patient_id}/EyeGaze/fixations.csv: {e}")
-            skipped_count += 1
             continue
         
-        # Process each unique DICOM_ID in this patient's fixations
+        # Process each unique DICOM_ID
         for dicom_id in fix_df['DICOM_ID'].unique():
+            # Check if we have a label for this image
+            if dicom_id not in dicom_to_label:
+                skipped_no_label += 1
+                continue
+            
             # Find the corresponding image
             image_path = find_image_for_dicom(patient_path, dicom_id)
             
             if image_path is None:
-                skipped_count += 1
+                skipped_no_image += 1
                 continue
             
             # Extract fixations for this image
@@ -70,7 +110,7 @@ def prepare_mimic_eye_metadata(data_root, output_dir='data/processed_mimic_eye')
             fixations_list = process_fixations(image_fixations)
             
             if len(fixations_list) == 0:
-                skipped_count += 1
+                skipped_no_fixations += 1
                 continue
             
             # Create sample ID
@@ -87,6 +127,9 @@ def prepare_mimic_eye_metadata(data_root, output_dir='data/processed_mimic_eye')
             if not os.path.exists(image_output_path):
                 shutil.copy(image_path, image_output_path)
             
+            # Get label from mapping
+            label = dicom_to_label[dicom_id]
+            
             # Assign split (80/10/10 split)
             rand = np.random.random()
             if rand < 0.8:
@@ -95,10 +138,6 @@ def prepare_mimic_eye_metadata(data_root, output_dir='data/processed_mimic_eye')
                 split = 'val'
             else:
                 split = 'test'
-            
-            # For now, binary classification: normal vs abnormal
-            # You can refine this based on master_sheet labels
-            label = 0  # Default to normal, update based on your needs
             
             metadata[sample_id] = {
                 'split': split,
@@ -120,14 +159,84 @@ def prepare_mimic_eye_metadata(data_root, output_dir='data/processed_mimic_eye')
     print("PROCESSING COMPLETE")
     print("="*60)
     print(f"✓ Successfully processed: {processed_count} images")
-    print(f"✗ Skipped: {skipped_count} images")
+    print(f"\nSkipped:")
+    print(f"  - No label in master sheet: {skipped_no_label}")
+    print(f"  - Image not found: {skipped_no_image}")
+    print(f"  - No valid fixations: {skipped_no_fixations}")
+    
     print(f"\n✓ Saved to: {output_dir}")
-    print(f"\nSplit distribution:")
-    print(f"  - Train: {sum(1 for v in metadata.values() if v['split'] == 'train')}")
-    print(f"  - Val:   {sum(1 for v in metadata.values() if v['split'] == 'val')}")
-    print(f"  - Test:  {sum(1 for v in metadata.values() if v['split'] == 'test')}")
+    print(f"\nFinal split distribution:")
+    
+    train_labels = [v['label'] for v in metadata.values() if v['split'] == 'train']
+    val_labels = [v['label'] for v in metadata.values() if v['split'] == 'val']
+    test_labels = [v['label'] for v in metadata.values() if v['split'] == 'test']
+    
+    print(f"\nTrain: {len(train_labels)} samples")
+    print(f"  - Normal (0):   {train_labels.count(0)}")
+    print(f"  - Abnormal (1): {train_labels.count(1)}")
+    
+    print(f"\nVal: {len(val_labels)} samples")
+    print(f"  - Normal (0):   {val_labels.count(0)}")
+    print(f"  - Abnormal (1): {val_labels.count(1)}")
+    
+    print(f"\nTest: {len(test_labels)} samples")
+    print(f"  - Normal (0):   {test_labels.count(0)}")
+    print(f"  - Abnormal (1): {test_labels.count(1)}")
     
     return output_dir
+
+
+def create_label_mapping(master_df):
+    """
+    Create DICOM_ID to label mapping.
+    
+    Binary classification:
+    - Label 0 (Normal): normal_reports == 1 OR no abnormalities
+    - Label 1 (Abnormal): Any pathology present
+    
+    Pathology columns: CHF, pneumonia, consolidation, enlarged_cardiac_silhouette, etc.
+    """
+    dicom_to_label = {}
+    
+    # Define abnormality columns to check
+    abnormality_cols = [
+        'CHF', 'pneumonia', 'consolidation', 
+        'enlarged_cardiac_silhouette', 'linear__patchy_atelectasis',
+        'lobar__segmental_collapse', 
+        'not_otherwise_specified_opacity___pleural__parenchymal_opacity__',
+        'pleural_effusion_or_thickening', 'pulmonary_edema__hazy_opacity'
+    ]
+    
+    for idx, row in master_df.iterrows():
+        dicom_id = row['dicom_id']
+        
+        # Check if explicitly marked as normal
+        is_normal = False
+        if 'normal_reports' in row and row['normal_reports'] == 1:
+            is_normal = True
+        elif 'Normal' in row and row['Normal'] == 1:
+            is_normal = True
+        
+        # Check for any abnormalities
+        has_abnormality = False
+        for col in abnormality_cols:
+            if col in row and row[col] == 1:
+                has_abnormality = True
+                break
+        
+        # Assign label
+        if is_normal and not has_abnormality:
+            label = 0  # Normal
+        elif has_abnormality:
+            label = 1  # Abnormal
+        else:
+            # Unclear case - check if mostly normal indicators
+            # Default to normal if no clear abnormalities
+            label = 0
+        
+        dicom_to_label[dicom_id] = label
+    
+    return dicom_to_label
 
 
 def find_image_for_dicom(patient_path, dicom_id):
@@ -191,13 +300,14 @@ def process_fixations(fixations_df):
 
 
 if __name__ == '__main__':
-    # Update this path to your MIMIC-Eye location
+    # Path to your MIMIC-Eye dataset
     data_root = '/media/16TB_Storage/kavin/dataset/physionet.org/files/mimic-eye-multimodal-datasets/1.0.0/mimic-eye'
-
-    original_output_dir = '/media/16TB_Storage/kavin/dataset/processed_mimic_eye'
     
-    output_dir = prepare_mimic_eye_metadata(data_root, original_output_dir)
+    output_dir = prepare_mimic_eye_metadata(
+        data_root, 
+        output_dir='/media/16TB_Storage/kavin/dataset/processed_mimic_eye'
+    )
     
     print(f"\n{'='*60}")
-    print("Dataset ready!")
-    print(f"  root_dir='{output_dir}'")
+    print("Dataset ready with proper labels!")
+    print(f"{'='*60}")
