@@ -7,16 +7,19 @@ import os
 from tqdm import tqdm
 import json
 from datetime import datetime
+import wandb
+from dotenv import load_dotenv
 
 from data.dataset import MIMICEyeDataset, collate_fn
 from models.encoders import ImageEncoder, GazeEncoder, ImageOnlyClassifier, GazePredictor
 from models.attention import GazeGuidedFusion
 
+# Load environment variables
+load_dotenv()
 
 class C3NetTrainer:
     """
     Training system for C3-Net (Cognitive Causal Chain Network)
-    
     Current implementation: Basic student path training
     - Image encoder + Gaze encoder + Fusion + Classifier
     - Single classification loss
@@ -86,13 +89,24 @@ class C3NetTrainer:
             weight_decay=config['training']['weight_decay']
         )
         
-        # Loss function
-        self.criterion = nn.CrossEntropyLoss()
-        self.gaze_criterion = nn.MSELoss()
+        # # Loss function
+        # self.criterion = nn.CrossEntropyLoss()
+        # self.gaze_criterion = nn.MSELoss()
 
-        # Loss weights
-        self.lambda_classification = 1.0
-        self.lambda_gaze_pred = 0.3
+        # Loss function with class weights
+        # Normal (33%) gets higher weight, Abnormal (67%) gets lower weight
+        # Inverse frequency weighting: 1/freq normalized
+        class_weights = torch.tensor([1.0/0.33, 1.0/0.67]).to(self.device)
+        # Normalize to sum to 2.0 (standard practice)
+        class_weights = class_weights / class_weights.sum() * 2.0
+        print(f"  Class weights: Normal={class_weights[0]:.3f}, Abnormal={class_weights[1]:.3f}")
+
+        self.criterion = nn.CrossEntropyLoss(weight=class_weights)
+        self.gaze_criterion = nn.KLDivLoss(reduction='batchmean')
+
+        # Loss weights (normalized to sum to 1.0)
+        self.lambda_gaze_pred = config['training']['lambda_gaze_pred']
+        self.lambda_classification = 1.0 - self.lambda_gaze_pred
         
         # Metrics tracking
         self.train_losses = []
@@ -100,6 +114,22 @@ class C3NetTrainer:
         self.train_accs = []
         self.val_accs = []
         self.best_val_acc = 0.0
+        
+        # Initialize wandb
+        wandb.init(
+            entity="ai4vs",
+            project="c3_net",
+            config={
+                "learning_rate": config['training']['learning_rate'],
+                "batch_size": config['training']['batch_size'],
+                "num_epochs": config['training']['num_epochs'],
+                "lambda_classification": self.lambda_classification,
+                "lambda_gaze_pred": self.lambda_gaze_pred,
+                "image_encoder": config['model']['image_encoder']['type'],
+                "gaze_spatial_dim": config['model']['gaze_encoder']['spatial_hidden_dim'],
+                "gaze_temporal_dim": config['model']['gaze_encoder']['temporal_hidden_dim'],
+            }
+        )
         
         print(f"\n✓ Models initialized on {self.device}")
         print(f"✓ Total trainable parameters: {sum(p.numel() for p in self.all_params):,}")
@@ -141,17 +171,27 @@ class C3NetTrainer:
                 patch_features, cls_token, gaze_weights, gaze_features
             )
             
+            # # 4. Predict gaze from image (auxiliary task)
+            # predicted_gaze = self.gaze_predictor(patch_features)  # [B, 196]
+            # # Reshape to match gaze_weights [B, 196, 1]
+            # target_gaze = gaze_weights.squeeze(-1)  # [B, 196]
+            
             # 4. Predict gaze from image (auxiliary task)
             predicted_gaze = self.gaze_predictor(patch_features)  # [B, 196]
-            # Reshape to match gaze_weights [B, 196, 1]
+            # For KL divergence: apply log_softmax to predictions, target already normalized
+            predicted_gaze_log = torch.log_softmax(predicted_gaze, dim=1)  # [B, 196]
             target_gaze = gaze_weights.squeeze(-1)  # [B, 196]
 
             # 5. Classify
             logits = self.classifier(fused_features)
 
+            # # Compute losses
+            # classification_loss = self.criterion(logits, labels)
+            # gaze_prediction_loss = self.gaze_criterion(predicted_gaze, target_gaze)
+
             # Compute losses
             classification_loss = self.criterion(logits, labels)
-            gaze_prediction_loss = self.gaze_criterion(predicted_gaze, target_gaze)
+            gaze_prediction_loss = self.gaze_criterion(predicted_gaze_log, target_gaze)
 
             # Total loss
             loss = (self.lambda_classification * classification_loss + 
@@ -181,7 +221,22 @@ class C3NetTrainer:
                 'loss': f'{loss.item():.4f}',
                 'acc': f'{100*correct/total:.2f}%'
             })
-        
+
+            # Log to wandb (per batch - optional, can be noisy)
+            wandb.log({
+                    "train/batch_loss": loss.item(),
+                    "train/batch_cls_loss": classification_loss.item(),
+                    "train/batch_gaze_loss": gaze_prediction_loss.item(),
+                })
+            
+            # # Log to wandb every 10 batches
+            # if batch_idx % 10 == 0:
+            #     wandb.log({
+            #         "train/batch_loss": loss.item(),
+            #         "train/batch_cls_loss": classification_loss.item(),
+            #         "train/batch_gaze_loss": gaze_prediction_loss.item(),
+            #     })
+                
         epoch_loss = total_loss / len(train_loader)
         epoch_acc = correct / total
         
@@ -217,17 +272,27 @@ class C3NetTrainer:
                     patch_features, cls_token, gaze_weights, gaze_features
                 )
                 
+                # # Predict gaze from image (auxiliary task)
+                # predicted_gaze = self.gaze_predictor(patch_features)  # [B, 196]
+                # # Reshape to match gaze_weights [B, 196, 1]
+                # target_gaze = gaze_weights.squeeze(-1)  # [B, 196]
+
                 # Predict gaze from image (auxiliary task)
                 predicted_gaze = self.gaze_predictor(patch_features)  # [B, 196]
-                # Reshape to match gaze_weights [B, 196, 1]
+                # For KL divergence: apply log_softmax to predictions
+                predicted_gaze_log = torch.log_softmax(predicted_gaze, dim=1)  # [B, 196]
                 target_gaze = gaze_weights.squeeze(-1)  # [B, 196]
 
                 # Classify
                 logits = self.classifier(fused_features)
 
+                # # Compute losses
+                # classification_loss = self.criterion(logits, labels)
+                # gaze_prediction_loss = self.gaze_criterion(predicted_gaze, target_gaze)
+
                 # Compute losses
                 classification_loss = self.criterion(logits, labels)
-                gaze_prediction_loss = self.gaze_criterion(predicted_gaze, target_gaze)
+                gaze_prediction_loss = self.gaze_criterion(predicted_gaze_log, target_gaze)
 
                 # Total loss
                 loss = (self.lambda_classification * classification_loss + 
@@ -290,6 +355,17 @@ class C3NetTrainer:
                 )
                 print(f"  ✓ New best model saved! (Val Acc: {val_acc*100:.2f}%)")
             
+            # Log epoch metrics to wandb
+            wandb.log({
+                "epoch": epoch + 1,
+                "train/loss": train_loss,
+                "train/accuracy": train_acc * 100,
+                "val/loss": val_loss,
+                "val/accuracy": val_acc * 100,
+                "val/best_accuracy": self.best_val_acc * 100,
+                "overfitting_gap": (train_acc - val_acc) * 100,
+            })
+            
             # Save checkpoint every 5 epochs
             if (epoch + 1) % 5 == 0:
                 self.save_checkpoint(
@@ -299,6 +375,8 @@ class C3NetTrainer:
         
         # Save training history
         self.save_training_history(save_dir)
+
+        wandb.finish()
         
         print("\n" + "="*80)
         print("Training Complete!")

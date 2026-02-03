@@ -11,6 +11,7 @@ Dataset ready!
     root_dir='/media/16TB_Storage/kavin/dataset/processed_mimic_eye'
 
 
+
 python3 test_preprocessing.py
 Testing Preprocessing and Encoding Pipeline
 
@@ -49,6 +50,7 @@ Initialized GazePredictor
   Saved visualization to 'test_visualization.png'
 
 ✓ All tests passed!
+
 
 
 python3 test_level1_fusion.py
@@ -93,6 +95,7 @@ Key Insights:
   • Learned attention can deviate to learn optimal patterns
   • Fused features combine raw image + gaze-guided attention
   • Ready for downstream classification!
+
 
 
 python3 test_classifier.py
@@ -150,6 +153,7 @@ Pipeline verified:
   Image → Encoder → Gaze Fusion → Classifier → Predictions ✓
 
 Ready for training!
+
 
 
 python3 train.py
@@ -247,6 +251,7 @@ Training Complete!
 Best validation accuracy: 100.00%
 
 
+
 python3 data/mimic_eye_adapter.py
 
 Processing MIMIC-Eye EyeGaze Dataset with Labels
@@ -291,6 +296,8 @@ Test: 102 samples
   - Abnormal (1): 72
 
 Dataset ready with proper labels!
+
+
 
 python3 train.py
 Loading datasets...

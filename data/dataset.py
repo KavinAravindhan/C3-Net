@@ -3,6 +3,7 @@ import json
 import torch
 from torch.utils.data import Dataset
 from .preprocessing import ImagePreprocessor, GazePreprocessor
+from .transforms import MedicalImageAugmentation, NoAugmentation
 
 
 class MIMICEyeDataset(Dataset):
@@ -48,6 +49,15 @@ class MIMICEyeDataset(Dataset):
         fixation_sigma = config['data']['fixation_sigma'] if config else 10
         
         self.image_preprocessor = ImagePreprocessor(image_size=image_size)
+        
+        # Initialize augmentation (only for training)
+        if split == 'train':
+            self.augmentation = MedicalImageAugmentation(image_size=image_size)
+            print("  Using data augmentation for training")
+        else:
+            self.augmentation = NoAugmentation()
+            print("  No augmentation for validation/test")
+
         self.gaze_preprocessor = GazePreprocessor(
             image_size=image_size,
             heatmap_size=heatmap_size,
@@ -116,10 +126,17 @@ class MIMICEyeDataset(Dataset):
                 - sample_id: str
         """
         sample_info = self.samples[idx]
-        
-        # Load and preprocess image
-        # Input: image file → Output: [3, 224, 224]
-        image = self.image_preprocessor(sample_info['image_path'])
+
+        # Load image
+        from PIL import Image
+        pil_image = Image.open(sample_info['image_path']).convert('RGB')
+
+        # Apply augmentation (training only)
+        pil_image = self.augmentation(pil_image)
+
+        # Preprocess image
+        # Input: PIL image → Output: [3, 224, 224]
+        image = self.image_preprocessor.preprocess_pil(pil_image)
         
         # Load gaze data
         with open(sample_info['gaze_path'], 'r') as f:

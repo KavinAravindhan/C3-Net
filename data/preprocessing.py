@@ -21,6 +21,32 @@ class ImagePreprocessor:
         self.mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
         self.std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
     
+    def preprocess_pil(self, pil_image):
+        """
+        Preprocess a PIL image (used with augmentation pipeline).
+        
+        Args:
+            pil_image: PIL Image object
+            
+        Returns:
+            image_tensor: Preprocessed image [C=3, H=224, W=224]
+        """
+        # Resize
+        image = pil_image.resize((self.image_size, self.image_size), 
+                                Image.BILINEAR)  # [224, 224, 3]
+        
+        # Convert to numpy array and normalize to [0, 1]
+        image = np.array(image).astype(np.float32) / 255.0  # [224, 224, 3]
+        
+        # Normalize using ImageNet statistics
+        # I_norm = (I - μ) / σ
+        image = (image - self.mean) / self.std  # [224, 224, 3]
+        
+        # Convert to PyTorch tensor [C, H, W]
+        image_tensor = torch.from_numpy(image).permute(2, 0, 1).float()  # [3, 224, 224]
+        
+        return image_tensor
+    
     def __call__(self, image_path):
         """
         Args:
