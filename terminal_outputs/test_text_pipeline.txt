@@ -1,0 +1,109 @@
+(c3net) kavin@lambda-aivs-oph:~/C3-Net$ python3 test_text_pipeline.py
+================================================================================
+Testing Full Multimodal Data Pipeline: Image + Gaze + Text
+================================================================================
+
+1. Loading dataset...
+Initialized MedicalImageAugmentation
+  - Random horizontal flip (p=0.5)
+  - Random rotation (±10°)
+  - Random affine (translate ±5%, scale ±5%)
+  - Color jitter (brightness/contrast ±20%)
+  Using data augmentation for training
+Loading tokenizer: emilyalsentzer/Bio_ClinicalBERT
+Initialized TextPreprocessor
+  Max length: 128 tokens
+  Tokenizer vocab size: 28996
+Loaded 885 samples for train split
+
+✓ Dataset loaded: 885 samples
+
+2. Creating DataLoader...
+✓ DataLoader created with batch_size=4
+
+3. Loading one batch...
+
+✓ Batch loaded successfully!
+
+================================================================================
+BATCH TENSOR SHAPES
+================================================================================
+
+Images:                torch.Size([4, 3, 224, 224])
+  Expected:            [4, 3, 224, 224]
+  ✓ Match!
+
+Gaze Heatmaps:         torch.Size([4, 224, 224])
+  Expected:            [4, 224, 224]
+  ✓ Match!
+
+Gaze Sequences:        torch.Size([4, 50, 3])
+  Expected:            [4, 50, 3]
+  ✓ Match!
+
+Gaze Seq Lengths:      torch.Size([4])
+  Expected:            [4]
+  ✓ Match!
+
+Text Token IDs:        torch.Size([4, 128])
+  Expected:            [4, 128]
+  ✓ Match!
+
+Text Attention Masks:  torch.Size([4, 128])
+  Expected:            [4, 128]
+  ✓ Match!
+
+Labels:                torch.Size([4])
+  Expected:            [4]
+  ✓ Match!
+
+Sample IDs:            4 items
+  Expected:            4
+  ✓ Match!
+
+================================================================================
+SAMPLE STATISTICS
+================================================================================
+
+Image pixel values:
+  Min:  -2.118
+  Max:  2.640
+  Mean: -0.031
+
+Gaze sequence lengths: [50, 46, 35, 28]
+
+Labels: [1, 0, 1, 1]
+  Normal (0):   1
+  Abnormal (1): 3
+
+Text token statistics:
+  Non-padding tokens per sample (first 4):
+    Sample 0: 128 tokens
+    Sample 1: 128 tokens
+    Sample 2: 128 tokens
+    Sample 3: 128 tokens
+
+================================================================================
+SAMPLE TEXT (first sample, decoded)
+================================================================================
+
+Decoded text preview (first 300 chars):
+--------------------------------------------------------------------------------
+FINAL REPORT INDICATION : _ _ _ year old man with pacemaker with concern for lead placement / / evaluate lead position TECHNIQUE : Chest PA and lateral COMPARISON : _ _ _ 17 : 30 chest radiograph FINDINGS : The pacemaker is visualized on the left chest wall ; the pacer leads terminate in the right a
+...
+--------------------------------------------------------------------------------
+
+================================================================================
+TEST SUMMARY
+================================================================================
+
+✅ ALL TESTS PASSED!
+Full multimodal pipeline (Image + Gaze + Text) is working correctly!
+
+Next steps:
+  1. Create text encoder (BioClinicalBERT)
+  2. Implement Level 2 fusion (text-image alignment)
+  3. Build teacher model
+  4. Implement knowledge distillation
+================================================================================
+(c3net) kavin@lambda-aivs-oph:~/C3-Net$ 

@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import timm  # PyTorch Image Models library
+from transformers import AutoModel
 
 
 class ImageEncoder(nn.Module):
@@ -246,6 +247,113 @@ class GazeEncoder(nn.Module):
         return patch_weights, gaze_features
 
 
+class TextEncoder(nn.Module):
+    """
+    BioClinicalBERT encoder for radiology reports.
+    
+    Architecture:
+        Input text tokens T: [B, max_length=128]
+        
+        1. Token Embedding + Positional Encoding:
+           E = TokenEmbed(T) + PositionEmbed
+           E: [B, 128, D=768]
+           
+        2. BERT Transformer layers (12 layers):
+           For each layer l:
+               E' = LayerNorm(E)
+               E' = MultiHeadAttention(E', mask) + E
+               E' = LayerNorm(E')
+               E = FFN(E') + E'
+               
+        3. Output:
+           - Token embeddings: [B, seq_len=128, D=768] - contextualized word representations
+           - CLS token: [B, D=768] - global text representation
+    
+    BioClinicalBERT is pretrained on:
+        - PubMed abstracts (biomedical literature)
+        - MIMIC-III clinical notes (same domain as our data!)
+    """
+    
+    def __init__(self, model_name='emilyalsentzer/Bio_ClinicalBERT', freeze_bert=True):
+        """
+        Args:
+            model_name: HuggingFace model identifier
+            freeze_bert: If True, freeze BERT weights initially (recommended for warm-up)
+        """
+        super(TextEncoder, self).__init__()
+        
+        # Load pretrained BioClinicalBERT
+        print(f"Loading BERT model: {model_name}")
+        self.bert = AutoModel.from_pretrained(model_name)
+        
+        # Get model dimensions
+        self.hidden_size = self.bert.config.hidden_size  # 768
+        self.num_layers = self.bert.config.num_hidden_layers  # 12
+        self.max_position_embeddings = self.bert.config.max_position_embeddings  # 512
+        
+        # Freeze BERT parameters if requested
+        self.frozen = freeze_bert
+        if freeze_bert:
+            for param in self.bert.parameters():
+                param.requires_grad = False
+        
+        print(f"Initialized TextEncoder")
+        print(f"  Hidden size: {self.hidden_size}")
+        print(f"  Num layers: {self.num_layers}")
+        print(f"  Max position embeddings: {self.max_position_embeddings}")
+        print(f"  Frozen: {freeze_bert}")
+    
+    def forward(self, token_ids, attention_mask):
+        """
+        Forward pass through text encoder.
+        
+        Args:
+            token_ids: Tensor [B, max_length=128] - tokenized input IDs
+            attention_mask: Tensor [B, max_length=128] - 1 for real tokens, 0 for padding
+            
+        Returns:
+            token_embeddings: Tensor [B, seq_len=128, D=768] - contextualized token representations
+            cls_token: Tensor [B, D=768] - global text representation (CLS token)
+        """
+        # Forward through BERT
+        # Input: token_ids [B, 128], attention_mask [B, 128]
+        outputs = self.bert(
+            input_ids=token_ids,
+            attention_mask=attention_mask,
+            return_dict=True
+        )
+        
+        # Extract outputs
+        # last_hidden_state: [B, seq_len=128, hidden_size=768]
+        token_embeddings = outputs.last_hidden_state  # [B, 128, 768]
+        
+        # CLS token is the first token
+        cls_token = token_embeddings[:, 0, :]  # [B, 768]
+        
+        return token_embeddings, cls_token
+    
+    def unfreeze(self):
+        """
+        Unfreeze BERT parameters for fine-tuning.
+        Call this after warm-up phase.
+        """
+        if self.frozen:
+            print("Unfreezing TextEncoder (BERT) for fine-tuning...")
+            for param in self.bert.parameters():
+                param.requires_grad = True
+            self.frozen = False
+    
+    def freeze(self):
+        """
+        Freeze BERT parameters.
+        """
+        if not self.frozen:
+            print("Freezing TextEncoder (BERT)...")
+            for param in self.bert.parameters():
+                param.requires_grad = False
+            self.frozen = True
+
+
 class GazePredictor(nn.Module):
     """
     Auxiliary module that predicts gaze from image features alone.
@@ -311,6 +419,7 @@ class GazePredictor(nn.Module):
         predicted_weights = torch.softmax(predicted_weights, dim=1)  # [B, 196]
         
         return predicted_weights
+
 
 class ImageOnlyClassifier(nn.Module):
     """

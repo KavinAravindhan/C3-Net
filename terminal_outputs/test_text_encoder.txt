@@ -1,0 +1,130 @@
+(c3net) kavin@lambda-aivs-oph:~/C3-Net$ python3 test_text_encoder.py
+================================================================================
+Testing TextEncoder (BioClinicalBERT)
+================================================================================
+
+1. Loading dataset...
+Initialized MedicalImageAugmentation
+  - Random horizontal flip (p=0.5)
+  - Random rotation (±10°)
+  - Random affine (translate ±5%, scale ±5%)
+  - Color jitter (brightness/contrast ±20%)
+  Using data augmentation for training
+Loading tokenizer: emilyalsentzer/Bio_ClinicalBERT
+Initialized TextPreprocessor
+  Max length: 128 tokens
+  Tokenizer vocab size: 28996
+Loaded 885 samples for train split
+✓ Dataset loaded: 885 samples
+
+2. Creating DataLoader...
+
+3. Loading one batch...
+✓ Batch loaded
+  Text token IDs shape: torch.Size([4, 128])
+  Text attention masks shape: torch.Size([4, 128])
+
+4. Initializing TextEncoder...
+Loading BERT model: emilyalsentzer/Bio_ClinicalBERT
+Loading weights: 100%|█████████████████████████████████████████████████████████████████████████████████████████████| 199/199 [00:00<00:00, 5220.97it/s, Materializing param=pooler.dense.weight]
+BertModel LOAD REPORT from: emilyalsentzer/Bio_ClinicalBERT
+Key                                        | Status     |  | 
+-------------------------------------------+------------+--+-
+cls.seq_relationship.weight                | UNEXPECTED |  | 
+cls.predictions.bias                       | UNEXPECTED |  | 
+cls.predictions.transform.LayerNorm.bias   | UNEXPECTED |  | 
+cls.seq_relationship.bias                  | UNEXPECTED |  | 
+cls.predictions.transform.dense.weight     | UNEXPECTED |  | 
+cls.predictions.transform.LayerNorm.weight | UNEXPECTED |  | 
+cls.predictions.decoder.weight             | UNEXPECTED |  | 
+cls.predictions.transform.dense.bias       | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED    :can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+Initialized TextEncoder
+  Hidden size: 768
+  Num layers: 12
+  Max position embeddings: 512
+  Frozen: True
+
+✓ TextEncoder initialized
+
+5. Moving to device: cuda
+
+6. Running forward pass...
+✓ Forward pass complete
+
+================================================================================
+OUTPUT TENSOR SHAPES
+================================================================================
+
+Token Embeddings:      torch.Size([4, 128, 768])
+  Expected:            [4, 128, 768]
+  ✓ Match!
+
+CLS Token:             torch.Size([4, 768])
+  Expected:            [4, 768]
+  ✓ Match!
+
+================================================================================
+OUTPUT STATISTICS
+================================================================================
+
+Token Embeddings:
+  Min:  -11.2441
+  Max:  4.4334
+  Mean: -0.0077
+  Std:  0.5516
+
+CLS Token:
+  Min:  -10.7616
+  Max:  1.1849
+  Mean: -0.0068
+  Std:  0.5087
+
+================================================================================
+TESTING FREEZE/UNFREEZE
+================================================================================
+
+Initial state: Frozen = True
+Trainable parameters: 0 / 108,310,272
+Percentage trainable: 0.00%
+
+Unfreezing BERT...
+Unfreezing TextEncoder (BERT) for fine-tuning...
+Trainable parameters: 108,310,272 / 108,310,272
+Percentage trainable: 100.00%
+
+Freezing BERT again...
+Freezing TextEncoder (BERT)...
+Trainable parameters: 0 / 108,310,272
+Percentage trainable: 0.00%
+
+================================================================================
+SAMPLE TEXT (first sample, decoded)
+================================================================================
+
+Decoded text preview (first 300 chars):
+--------------------------------------------------------------------------------
+FINAL REPORT INDICATION : History : _ _ _ M with hypotension, cough, L lung crack. es / / evaluate for pneumonia TECHNIQUE : Chest PA and lateral COMPARISON : CTA chest _ _ _ FINDINGS : Lungs are hyperinflated. Mild bibasilar opacities likely reflect atelectasis. There is no pneumothorax or pleural 
+...
+--------------------------------------------------------------------------------
+
+================================================================================
+TEST SUMMARY
+================================================================================
+
+✅ ALL TESTS PASSED!
+
+TextEncoder is working correctly!
+  - Token embeddings: [B, 128, 768] ✓
+  - CLS token: [B, 768] ✓
+  - Freeze/unfreeze mechanism: ✓
+  - Total parameters: 108,310,272
+
+Next steps:
+  1. Create Level 2 fusion (text-image alignment)
+  2. Build teacher model
+  3. Implement knowledge distillation
+================================================================================
+(c3net) kavin@lambda-aivs-oph:~/C3-Net$ 

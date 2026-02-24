@@ -10,20 +10,15 @@ def prepare_mimic_eye_metadata(data_root, output_dir='data/processed_mimic_eye')
     """
     Convert MIMIC-Eye EyeGaze dataset into format expected by our dataset class.
     
-    Structure:
-    - Reads from patient_*/EyeGaze/fixations.csv
-    - Matches with patient_*/CXR-JPG/s*/DICOM_ID.jpg
-    - Creates metadata.json with train/val/test splits
-    """
-
-    """
-    Convert MIMIC-Eye EyeGaze dataset into format expected by our dataset class.
-    
-    NOW WITH PROPER LABELS from master_sheet.csv
+    NOW INCLUDES:
+    - Images from patient_*/CXR-JPG/s*/DICOM_ID.jpg
+    - Gaze from patient_*/EyeGaze/fixations.csv
+    - Text from patient_*/CXR-DICOM/s{study_id}.txt
+    - Labels from master_sheet.csv
     """
 
     print("="*60)
-    print("Processing MIMIC-Eye EyeGaze Dataset with Labels")
+    print("Processing MIMIC-Eye: Image + Gaze + Text")
     print("="*60)
     
     # Load master sheet with diagnosis labels
@@ -57,6 +52,7 @@ def prepare_mimic_eye_metadata(data_root, output_dir='data/processed_mimic_eye')
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(os.path.join(output_dir, 'images'), exist_ok=True)
     os.makedirs(os.path.join(output_dir, 'gaze'), exist_ok=True)
+    os.makedirs(os.path.join(output_dir, 'text'), exist_ok=True)  # NEW
     
     # Get all patient directories
     patient_dirs = sorted([d for d in os.listdir(data_root) 
@@ -70,6 +66,7 @@ def prepare_mimic_eye_metadata(data_root, output_dir='data/processed_mimic_eye')
     skipped_no_label = 0
     skipped_no_image = 0
     skipped_no_fixations = 0
+    skipped_no_text = 0
     
     # Process each patient
     for patient_id in tqdm(patient_dirs, desc="Processing patients"):
@@ -113,6 +110,15 @@ def prepare_mimic_eye_metadata(data_root, output_dir='data/processed_mimic_eye')
                 skipped_no_fixations += 1
                 continue
             
+            # Extract radiology report (NEW)
+            report_text, report_path = extract_report(patient_path, dicom_id)
+            
+            if report_text is None:
+                skipped_no_text += 1
+                # Optional: continue or proceed without text
+                # For now, we'll skip samples without text to ensure full multimodal
+                continue
+            
             # Create sample ID
             sample_id = f"{patient_id}_{dicom_id}"
             
@@ -126,6 +132,11 @@ def prepare_mimic_eye_metadata(data_root, output_dir='data/processed_mimic_eye')
             image_output_path = os.path.join(output_dir, 'images', f"{sample_id}.jpg")
             if not os.path.exists(image_output_path):
                 shutil.copy(image_path, image_output_path)
+            
+            # Save cleaned report text (NEW)
+            text_output_path = os.path.join(output_dir, 'text', f"{sample_id}.txt")
+            with open(text_output_path, 'w', encoding='utf-8') as f:
+                f.write(report_text)
             
             # Get label from mapping
             label = dicom_to_label[dicom_id]
@@ -144,7 +155,9 @@ def prepare_mimic_eye_metadata(data_root, output_dir='data/processed_mimic_eye')
                 'label': int(label),
                 'patient_id': patient_id,
                 'dicom_id': dicom_id,
-                'num_fixations': len(fixations_list)
+                'num_fixations': len(fixations_list),
+                'has_text': True,  # NEW
+                'text_length': len(report_text)  # NEW
             }
             
             processed_count += 1
@@ -163,8 +176,13 @@ def prepare_mimic_eye_metadata(data_root, output_dir='data/processed_mimic_eye')
     print(f"  - No label in master sheet: {skipped_no_label}")
     print(f"  - Image not found: {skipped_no_image}")
     print(f"  - No valid fixations: {skipped_no_fixations}")
+    print(f"  - No radiology report: {skipped_no_text}")
     
     print(f"\n✓ Saved to: {output_dir}")
+    print(f"  - Images: {output_dir}/images/")
+    print(f"  - Gaze: {output_dir}/gaze/")
+    print(f"  - Text: {output_dir}/text/")
+    
     print(f"\nFinal split distribution:")
     
     train_labels = [v['label'] for v in metadata.values() if v['split'] == 'train']
@@ -183,7 +201,81 @@ def prepare_mimic_eye_metadata(data_root, output_dir='data/processed_mimic_eye')
     print(f"  - Normal (0):   {test_labels.count(0)}")
     print(f"  - Abnormal (1): {test_labels.count(1)}")
     
+    # Print text statistics
+    text_lengths = [v['text_length'] for v in metadata.values()]
+    if text_lengths:
+        print(f"\nText Statistics:")
+        print(f"  - Mean length: {np.mean(text_lengths):.0f} characters")
+        print(f"  - Median length: {np.median(text_lengths):.0f} characters")
+        print(f"  - Min length: {np.min(text_lengths)} characters")
+        print(f"  - Max length: {np.max(text_lengths)} characters")
+    
     return output_dir
+
+
+def extract_report(patient_path, dicom_id):
+    """
+    Extract and clean radiology report for a given DICOM_ID.
+    
+    Returns:
+        cleaned_text: Cleaned report text (or None if not found)
+        report_path: Path to original report file (or None)
+    """
+    # Find study_id from cxr_meta.csv
+    meta_csv_path = os.path.join(patient_path, 'CXR-JPG', 'cxr_meta.csv')
+    
+    if not os.path.exists(meta_csv_path):
+        return None, None
+    
+    try:
+        meta_df = pd.read_csv(meta_csv_path)
+        row = meta_df[meta_df['dicom_id'] == dicom_id]
+        
+        if len(row) == 0:
+            return None, None
+        
+        study_id = row['study_id'].values[0]
+        
+        # Find report file
+        report_path = os.path.join(
+            patient_path,
+            'CXR-DICOM',
+            f's{study_id}.txt'
+        )
+        
+        if not os.path.exists(report_path):
+            return None, None
+        
+        # Read and clean report
+        with open(report_path, 'r', encoding='utf-8', errors='ignore') as f:
+            raw_text = f.read()
+        
+        cleaned_text = clean_report_text(raw_text)
+        
+        return cleaned_text, report_path
+        
+    except Exception as e:
+        return None, None
+
+
+def clean_report_text(text):
+    """
+    Clean radiology report text.
+    
+    - Remove excessive whitespace
+    - Normalize line endings
+    - Keep essential clinical content
+    """
+    # Remove common headers (optional - might want to keep structure)
+    # For now, keep everything and just clean whitespace
+    
+    # Normalize whitespace
+    text = ' '.join(text.split())
+    
+    # Basic cleaning
+    text = text.strip()
+    
+    return text
 
 
 def create_label_mapping(master_df):
@@ -309,5 +401,6 @@ if __name__ == '__main__':
     )
     
     print(f"\n{'='*60}")
-    print("Dataset ready with proper labels!")
+    print("Full multimodal dataset ready!")
+    print("Image + Gaze + Text")
     print(f"{'='*60}")

@@ -3,6 +3,8 @@ import torch
 from scipy.ndimage import gaussian_filter
 from PIL import Image
 import cv2
+from transformers import AutoTokenizer
+
 
 class ImagePreprocessor:
     """
@@ -190,3 +192,83 @@ class GazePreprocessor:
         sequence, seq_length = self.create_sequence(fixations)  # [50, 3], scalar
         
         return heatmap, sequence, seq_length
+
+
+class TextPreprocessor:
+    """
+    Preprocesses clinical radiology reports for BERT-based text encoding.
+    
+    Uses BioClinicalBERT tokenizer optimized for clinical text.
+    
+    Process:
+        1. Load cleaned report text
+        2. Tokenize using BioClinicalBERT tokenizer
+        3. Pad/truncate to max_length
+        4. Create attention masks
+        
+    Output:
+        - token_ids: [max_length] - BERT input token IDs
+        - attention_mask: [max_length] - 1 for real tokens, 0 for padding
+    """
+    
+    def __init__(self, model_name='emilyalsentzer/Bio_ClinicalBERT', max_length=128):
+        """
+        Args:
+            model_name: HuggingFace model identifier for tokenizer
+            max_length: Maximum sequence length (default 128 tokens)
+        """
+        self.max_length = max_length
+        
+        # Load BioClinicalBERT tokenizer
+        print(f"Loading tokenizer: {model_name}")
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        
+        print(f"Initialized TextPreprocessor")
+        print(f"  Max length: {max_length} tokens")
+        print(f"  Tokenizer vocab size: {len(self.tokenizer)}")
+    
+    def __call__(self, text):
+        """
+        Tokenize clinical text.
+        
+        Args:
+            text: Raw or cleaned report text (string)
+            
+        Returns:
+            token_ids: Tensor [max_length] - tokenized input IDs
+            attention_mask: Tensor [max_length] - attention mask
+        """
+        # Tokenize with padding and truncation
+        encoding = self.tokenizer(
+            text,
+            add_special_tokens=True,      # Add [CLS] and [SEP]
+            max_length=self.max_length,
+            padding='max_length',          # Pad to max_length
+            truncation=True,               # Truncate if longer
+            return_tensors='pt'            # Return PyTorch tensors
+        )
+        
+        # Extract token IDs and attention mask
+        # Shape: [1, max_length] → squeeze to [max_length]
+        token_ids = encoding['input_ids'].squeeze(0)  # [max_length]
+        attention_mask = encoding['attention_mask'].squeeze(0)  # [max_length]
+        
+        return token_ids, attention_mask
+    
+    def decode(self, token_ids):
+        """
+        Decode token IDs back to text (useful for debugging).
+        
+        Args:
+            token_ids: Tensor [max_length]
+            
+        Returns:
+            text: Decoded string
+        """
+        # Remove padding tokens (token_id = 0)
+        # Convert to list if tensor
+        if torch.is_tensor(token_ids):
+            token_ids = token_ids.tolist()
+        
+        text = self.tokenizer.decode(token_ids, skip_special_tokens=True)
+        return text

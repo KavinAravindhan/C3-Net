@@ -1,0 +1,60 @@
+(c3net) kavin@lambda-aivs-oph:~/C3-Net$ python3 data/mimic_eye_adapter.py
+============================================================
+Processing MIMIC-Eye: Image + Gaze + Text
+============================================================
+
+Loading master sheet from:
+  /media/16TB_Storage/kavin/dataset/physionet.org/files/mimic-eye-multimodal-datasets/1.0.0/mimic-eye/spreadsheets/EyeGaze/master_sheet_with_updated_stayId.csv
+✓ Loaded 1083 records from master sheet
+✓ Created label mapping for 1083 images
+
+Label distribution:
+  Normal (0):   360
+  Abnormal (1): 723
+
+Found 3192 patient directories
+Processing patients with gaze data...
+
+Processing patients: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 3192/3192 [00:16<00:00, 199.03it/s]
+
+============================================================
+PROCESSING COMPLETE
+============================================================
+✓ Successfully processed: 1083 images
+
+Skipped:
+  - No label in master sheet: 0
+  - Image not found: 0
+  - No valid fixations: 0
+  - No radiology report: 0
+
+✓ Saved to: /media/16TB_Storage/kavin/dataset/processed_mimic_eye
+  - Images: /media/16TB_Storage/kavin/dataset/processed_mimic_eye/images/
+  - Gaze: /media/16TB_Storage/kavin/dataset/processed_mimic_eye/gaze/
+  - Text: /media/16TB_Storage/kavin/dataset/processed_mimic_eye/text/
+
+Final split distribution:
+
+Train: 885 samples
+  - Normal (0):   296
+  - Abnormal (1): 589
+
+Val: 94 samples
+  - Normal (0):   34
+  - Abnormal (1): 60
+
+Test: 104 samples
+  - Normal (0):   30
+  - Abnormal (1): 74
+
+Text Statistics:
+  - Mean length: 624 characters
+  - Median length: 582 characters
+  - Min length: 219 characters
+  - Max length: 1813 characters
+
+============================================================
+Full multimodal dataset ready!
+Image + Gaze + Text
+============================================================
+(c3net) kavin@lambda-aivs-oph:~/C3-Net$ 

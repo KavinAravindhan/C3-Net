@@ -1,0 +1,192 @@
+(c3net) kavin@lambda-aivs-oph:~/C3-Net$ python3 test_attention.py
+================================================================================
+Testing Attention & Fusion Modules
+================================================================================
+
+Using device: cuda
+
+================================================================================
+STEP 1: Loading Dataset
+================================================================================
+Initialized MedicalImageAugmentation
+  - Random horizontal flip (p=0.5)
+  - Random rotation (±10°)
+  - Random affine (translate ±5%, scale ±5%)
+  - Color jitter (brightness/contrast ±20%)
+  Using data augmentation for training
+Loading tokenizer: emilyalsentzer/Bio_ClinicalBERT
+Initialized TextPreprocessor
+  Max length: 128 tokens
+  Tokenizer vocab size: 28996
+Loaded 885 samples for train split
+✓ Batch loaded: 4 samples
+
+================================================================================
+STEP 2: Initializing Encoders
+================================================================================
+
+Initializing ImageEncoder...
+Initialized vit_base_patch16_224
+  Embedding dim: 768
+  Num patches: 196
+  Pretrained: True
+  Frozen: False
+
+Initializing GazeEncoder...
+Initialized GazeEncoder
+  Spatial hidden dim: 256
+  Temporal hidden dim: 256
+  Num patches: 196
+
+Initializing TextEncoder...
+Loading BERT model: emilyalsentzer/Bio_ClinicalBERT
+Loading weights: 100%|█████████████████████████████████████████████████████████████████████████████████████████████| 199/199 [00:00<00:00, 4939.82it/s, Materializing param=pooler.dense.weight]
+BertModel LOAD REPORT from: emilyalsentzer/Bio_ClinicalBERT
+Key                                        | Status     |  | 
+-------------------------------------------+------------+--+-
+cls.predictions.decoder.weight             | UNEXPECTED |  | 
+cls.predictions.transform.dense.weight     | UNEXPECTED |  | 
+cls.predictions.transform.dense.bias       | UNEXPECTED |  | 
+cls.seq_relationship.bias                  | UNEXPECTED |  | 
+cls.seq_relationship.weight                | UNEXPECTED |  | 
+cls.predictions.bias                       | UNEXPECTED |  | 
+cls.predictions.transform.LayerNorm.weight | UNEXPECTED |  | 
+cls.predictions.transform.LayerNorm.bias   | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED    :can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+Initialized TextEncoder
+  Hidden size: 768
+  Num layers: 12
+  Max position embeddings: 512
+  Frozen: True
+
+✓ All encoders initialized
+
+================================================================================
+STEP 3: Encoding Inputs
+================================================================================
+
+Encoding images...
+  Image patches: torch.Size([4, 196, 768])
+  Image CLS: torch.Size([4, 768])
+
+Encoding gaze...
+  Gaze weights: torch.Size([4, 196, 1])
+  Gaze features: torch.Size([4, 512])
+
+Encoding text...
+  Text embeddings: torch.Size([4, 128, 768])
+  Text CLS: torch.Size([4, 768])
+
+✓ All inputs encoded
+
+================================================================================
+STEP 4: Testing Level 1 - Gaze-Guided Fusion
+================================================================================
+
+Initializing GazeGuidedFusion...
+Initialized GazeGuidedAttention
+  Image dim: 768
+  Gaze dim: 512
+  Num heads: 8
+
+Running Level 1 forward pass...
+
+✓ Level 1 Forward Pass Complete
+
+Output Shapes:
+  Gaze-guided features: torch.Size([4, 768])
+    Expected:           [4, 768]
+    ✓ Match!
+
+  Attention map:        torch.Size([4, 196])
+    Expected:           [4, 196]
+    ✓ Match!
+
+Statistics:
+  Features - Min: -7.0164, Max: 4.4223, Mean: -0.0000
+  Attention - Min: 0.0019, Max: 0.0084, Sum: 1.0035
+
+================================================================================
+STEP 5: Testing Level 2 - Text-Image Alignment
+================================================================================
+
+Initializing TextImageAlignment...
+Initialized TextImageAlignment
+  Hidden dim: 768
+  Output dim: 512
+  Num heads: 8
+
+Running Level 2 forward pass...
+
+✓ Level 2 Forward Pass Complete
+
+Output Shapes:
+  Aligned features:     torch.Size([4, 512])
+    Expected:           [4, 512]
+    ✓ Match!
+
+  Attention map:        torch.Size([4, 128, 196])
+    Expected:           [4, 128, 196]
+    ✓ Match!
+
+Statistics:
+  Features - Min: 0.0000, Max: 3.9325, Mean: 0.3894
+  Attention - Min: 0.0014, Max: 0.0101
+
+Attention Pattern Analysis:
+  Average attention per text token:
+    Min: 0.004974
+    Max: 0.005211
+    Mean: 0.005101
+
+  Average attention per image patch:
+    Min: 0.003999
+    Max: 0.006870
+    Mean: 0.005101
+
+================================================================================
+STEP 6: Testing Complete Multimodal Pipeline
+================================================================================
+
+Pipeline Flow:
+  Image → ImageEncoder → Patches [4, 196, 768]
+  Gaze → GazeEncoder → Weights [4, 196, 1] + Features [4, 512]
+  Level 1 → GazeGuidedFusion → Gaze-weighted features [4, 768]
+  Text → TextEncoder → Embeddings [4, 128, 768]
+  Level 2 → TextImageAlignment → Aligned features [4, 512]
+
+✓ Complete pipeline verified!
+
+================================================================================
+STEP 7: Model Statistics
+================================================================================
+
+Trainable Parameters:
+  ImageEncoder:        85,798,656
+  GazeEncoder:         1,081,856
+  TextEncoder:         0
+  Level 1 Fusion:      3,350,784
+  Level 2 Fusion:      3,939,072
+  ────────────────────────────────────────
+  Total:               94,170,368
+
+================================================================================
+TEST SUMMARY
+================================================================================
+
+✅ ALL TESTS PASSED!
+
+Both fusion levels are working correctly:
+  ✓ Level 1: Gaze-guided attention fusion
+  ✓ Level 2: Text-image alignment fusion
+
+Ready to build Teacher Model!
+
+Next steps:
+  1. Create Teacher model (combines all modalities)
+  2. Implement knowledge distillation
+  3. Update training loop
+================================================================================
+(c3net) kavin@lambda-aivs-oph:~/C3-Net$ 
