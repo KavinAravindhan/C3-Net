@@ -1,0 +1,164 @@
+(c3net) kavin@lambda-aivs-oph:~/C3-Net$ python3 test_teacher.py
+================================================================================
+Testing MultimodalTeacher
+================================================================================
+
+Using device: cuda
+
+================================================================================
+STEP 1: Loading Dataset
+================================================================================
+Initialized MedicalImageAugmentation
+  - Random horizontal flip (p=0.5)
+  - Random rotation (±10°)
+  - Random affine (translate ±5%, scale ±5%)
+  - Color jitter (brightness/contrast ±20%)
+  Using data augmentation for training
+Loading tokenizer: emilyalsentzer/Bio_ClinicalBERT
+Initialized TextPreprocessor
+  Max length: 128 tokens
+  Tokenizer vocab size: 28996
+Loaded 885 samples for train split
+✓ Batch loaded: 4 samples
+
+================================================================================
+STEP 2: Initializing MultimodalTeacher
+================================================================================
+Initialized vit_base_patch16_224
+  Embedding dim: 768
+  Num patches: 196
+  Pretrained: True
+  Frozen: False
+Initialized GazeEncoder
+  Spatial hidden dim: 256
+  Temporal hidden dim: 256
+  Num patches: 196
+Loading BERT model: emilyalsentzer/Bio_ClinicalBERT
+Loading weights: 100%|█████████████████████████████████████████████████████████████████████████████████████████████| 199/199 [00:00<00:00, 5165.43it/s, Materializing param=pooler.dense.weight]
+BertModel LOAD REPORT from: emilyalsentzer/Bio_ClinicalBERT
+Key                                        | Status     |  | 
+-------------------------------------------+------------+--+-
+cls.predictions.transform.LayerNorm.bias   | UNEXPECTED |  | 
+cls.predictions.transform.dense.bias       | UNEXPECTED |  | 
+cls.seq_relationship.bias                  | UNEXPECTED |  | 
+cls.predictions.transform.LayerNorm.weight | UNEXPECTED |  | 
+cls.predictions.bias                       | UNEXPECTED |  | 
+cls.predictions.decoder.weight             | UNEXPECTED |  | 
+cls.seq_relationship.weight                | UNEXPECTED |  | 
+cls.predictions.transform.dense.weight     | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED    :can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+Initialized TextEncoder
+  Hidden size: 768
+  Num layers: 12
+  Max position embeddings: 512
+  Frozen: True
+Initialized GazeGuidedAttention
+  Image dim: 768
+  Gaze dim: 512
+  Num heads: 8
+Initialized TextImageAlignment
+  Hidden dim: 768
+  Output dim: 512
+  Num heads: 8
+Initialized MultimodalTeacher
+  Combined feature dim: 3328
+  Num classes: 2
+  BERT frozen: True
+
+✓ Teacher initialized
+
+================================================================================
+STEP 3: Forward Pass
+================================================================================
+
+✓ Forward pass complete
+
+================================================================================
+STEP 4: Output Shape Verification
+================================================================================
+
+Logits:              torch.Size([4, 2])
+  Expected:          [4, 2]
+  ✓ Match!
+
+Level 1 Attention:   torch.Size([4, 196])
+  Expected:          [4, 196]
+  ✓ Match!
+
+Level 2 Attention:   torch.Size([4, 128, 196])
+  Expected:          [4, 128, 196]
+  ✓ Match!
+
+================================================================================
+STEP 5: Output Statistics
+================================================================================
+
+Logits:
+  Min:  -0.6727
+  Max:  0.5312
+  Mean: -0.1950
+
+Softmax Probabilities:
+  Sample 0: P(Normal)=0.584, P(Abnormal)=0.416 | Pred=0, GT=0
+  Sample 1: P(Normal)=0.363, P(Abnormal)=0.637 | Pred=1, GT=1
+  Sample 2: P(Normal)=0.769, P(Abnormal)=0.231 | Pred=0, GT=1
+  Sample 3: P(Normal)=0.571, P(Abnormal)=0.429 | Pred=0, GT=1
+
+================================================================================
+STEP 6: Loss Computation
+================================================================================
+
+✓ Cross-entropy loss: 0.8250
+  (Expected ~0.69 for random predictions on binary task)
+
+================================================================================
+STEP 7: Backward Pass (Gradient Check)
+================================================================================
+
+✓ Backward pass complete
+  Classifier has gradients: ✓ Yes
+
+================================================================================
+STEP 8: BERT Freeze/Unfreeze
+================================================================================
+BERT frozen
+  Trainable BERT params after freeze:   0
+Unfreezing TextEncoder (BERT) for fine-tuning...
+BERT unfrozen
+  Trainable BERT params after unfreeze: 108,310,272
+Freezing TextEncoder (BERT)...
+BERT frozen
+
+================================================================================
+STEP 9: Parameter Count
+================================================================================
+
+Trainable Parameters (BERT frozen):
+  ImageEncoder:      85,798,656
+  GazeEncoder:        1,081,856
+  TextEncoder:                0  (frozen)
+  Level1 Fusion:      3,350,784
+  Level2 Fusion:      3,939,072
+  Classifier:         3,674,370
+  ────────────────────────────────────────
+  Total trainable:   97,844,738
+  Total params:     206,155,010
+
+================================================================================
+TEST SUMMARY
+================================================================================
+
+✅ ALL TESTS PASSED!
+
+MultimodalTeacher is working correctly:
+  ✓ Forward pass: logits [B, 2]
+  ✓ Attention maps: level1 [B, 196], level2 [B, 128, 196]
+  ✓ Loss computation
+  ✓ Backward pass with gradients
+  ✓ BERT freeze/unfreeze
+
+Ready to update train.py for teacher training!
+================================================================================
+(c3net) kavin@lambda-aivs-oph:~/C3-Net$ 

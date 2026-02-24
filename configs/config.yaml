@@ -11,6 +11,11 @@ data:
 
 # Model Configuration  
 model:
+  # Top-level model params
+  num_classes: 2
+  freeze_bert: true
+  dropout: 0.3
+  
   # Image Encoder (ViT)
   image_encoder:
     type: "vit_base_patch16_224"

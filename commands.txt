@@ -13,6 +13,7 @@ python3 test_classifier.py
 python3 test_text_pipeline.py
 python3 test_text_encoder.py
 python3 test_attention.py
+python3 test_teacher.py
 
 python3 train.py
 nohup python3 train.py > z_train.log 2>&1 &
