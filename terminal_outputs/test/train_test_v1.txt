@@ -1,0 +1,143 @@
+nohup: ignoring input
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from WANDB_API_KEY.
+wandb: Currently logged in as: kavin_aravindhan (ai4vs) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.24.0
+wandb: Run data is saved locally in /home/kavin/C3-Net/wandb/run-20260301_175412-yhbp465z
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run teacher_image_only_20260301_175412
+wandb: ⭐️ View project at https://wandb.ai/ai4vs/c3_net
+wandb: 🚀 View run at https://wandb.ai/ai4vs/c3_net/runs/yhbp465z
+Loading datasets...
+Initialized MedicalImageAugmentation
+  - Random horizontal flip (p=0.5)
+  - Random rotation (±10°)
+  - Random affine (translate ±5%, scale ±5%)
+  - Color jitter (brightness/contrast ±20%)
+  Using data augmentation for training
+Loading tokenizer: emilyalsentzer/Bio_ClinicalBERT
+Initialized TextPreprocessor
+  Max length: 128 tokens
+  Tokenizer vocab size: 28996
+Loaded 885 samples for train split
+  No augmentation for validation/test
+Loading tokenizer: emilyalsentzer/Bio_ClinicalBERT
+Initialized TextPreprocessor
+  Max length: 128 tokens
+  Tokenizer vocab size: 28996
+Loaded 94 samples for val split
+Using GPU 1: NVIDIA RTX A6000
+================================================================================
+Initializing C3-Net Teacher Training
+================================================================================
+Modality:           image_only
+
+1. Loading MultimodalTeacher...
+Initialized vit_base_patch16_224
+  Embedding dim: 768
+  Num patches: 196
+  Pretrained: True
+  Frozen: False
+Initialized MultimodalTeacher
+  Modality: image_only
+  Combined feature dim: 768
+  Num classes: 2
+
+2. Class weights: Normal=1.340, Abnormal=0.660
+
+✓ Teacher initialized
+  Total params:     86,851,586
+  Trainable params: 86,851,586
+  BERT status:      N/A (no text encoder)
+
+================================================================================
+Starting Teacher Training
+================================================================================
+Total epochs:   2
+Train samples:  885
+Val samples:    94
+Batch size:     32
+Modality:       image_only
+BERT:           Not used for modality 'image_only'
+
+================================================================================
+Epoch 1/2
+================================================================================
+Epoch 1 [Train]:   0%|          | 0/28 [00:00<?, ?it/s]Epoch 1 [Train]:   0%|          | 0/28 [00:18<?, ?it/s, loss=0.7168, acc=53.12%]Epoch 1 [Train]:   4%|▎         | 1/28 [00:18<08:25, 18.72s/it, loss=0.7168, acc=53.12%]Epoch 1 [Train]:   4%|▎         | 1/28 [00:18<08:25, 18.72s/it, loss=0.6629, acc=45.31%]Epoch 1 [Train]:   7%|▋         | 2/28 [00:18<03:23,  7.84s/it, loss=0.6629, acc=45.31%]Epoch 1 [Train]:   7%|▋         | 2/28 [00:19<03:23,  7.84s/it, loss=1.0057, acc=47.92%]Epoch 1 [Train]:  11%|█         | 3/28 [00:19<01:56,  4.65s/it, loss=1.0057, acc=47.92%]Epoch 1 [Train]:  11%|█         | 3/28 [00:20<01:56,  4.65s/it, loss=0.7849, acc=44.53%]Epoch 1 [Train]:  14%|█▍        | 4/28 [00:20<01:09,  2.91s/it, loss=0.7849, acc=44.53%]Epoch 1 [Train]:  14%|█▍        | 4/28 [00:34<01:09,  2.91s/it, loss=0.7236, acc=48.75%]Epoch 1 [Train]:  18%|█▊        | 5/28 [00:34<02:46,  7.22s/it, loss=0.7236, acc=48.75%]Epoch 1 [Train]:  18%|█▊        | 5/28 [00:35<02:46,  7.22s/it, loss=0.7514, acc=46.35%]Epoch 1 [Train]:  21%|██▏       | 6/28 [00:35<01:46,  4.84s/it, loss=0.7514, acc=46.35%]Epoch 1 [Train]:  21%|██▏       | 6/28 [00:37<01:46,  4.84s/it, loss=0.6855, acc=48.66%]Epoch 1 [Train]:  25%|██▌       | 7/28 [00:37<01:21,  3.90s/it, loss=0.6855, acc=48.66%]Epoch 1 [Train]:  25%|██▌       | 7/28 [00:37<01:21,  3.90s/it, loss=0.6470, acc=50.78%]Epoch 1 [Train]:  29%|██▊       | 8/28 [00:37<00:54,  2.73s/it, loss=0.6470, acc=50.78%]Epoch 1 [Train]:  29%|██▊       | 8/28 [00:52<00:54,  2.73s/it, loss=0.7357, acc=48.26%]Epoch 1 [Train]:  32%|███▏      | 9/28 [00:52<02:07,  6.72s/it, loss=0.7357, acc=48.26%]Epoch 1 [Train]:  32%|███▏      | 9/28 [00:53<02:07,  6.72s/it, loss=0.8293, acc=46.56%]Epoch 1 [Train]:  36%|███▌      | 10/28 [00:53<01:24,  4.71s/it, loss=0.8293, acc=46.56%]Epoch 1 [Train]:  36%|███▌      | 10/28 [00:54<01:24,  4.71s/it, loss=0.7332, acc=45.74%]Epoch 1 [Train]:  39%|███▉      | 11/28 [00:54<01:01,  3.60s/it, loss=0.7332, acc=45.74%]Epoch 1 [Train]:  39%|███▉      | 11/28 [00:54<01:01,  3.60s/it, loss=0.7252, acc=46.09%]Epoch 1 [Train]:  43%|████▎     | 12/28 [00:54<00:41,  2.57s/it, loss=0.7252, acc=46.09%]Epoch 1 [Train]:  43%|████▎     | 12/28 [01:10<00:41,  2.57s/it, loss=0.7134, acc=47.60%]Epoch 1 [Train]:  46%|████▋     | 13/28 [01:10<01:39,  6.64s/it, loss=0.7134, acc=47.60%]Epoch 1 [Train]:  46%|████▋     | 13/28 [01:10<01:39,  6.64s/it, loss=0.7506, acc=49.33%]Epoch 1 [Train]:  50%|█████     | 14/28 [01:10<01:05,  4.70s/it, loss=0.7506, acc=49.33%]Epoch 1 [Train]:  50%|█████     | 14/28 [01:10<01:05,  4.70s/it, loss=0.8498, acc=50.00%]Epoch 1 [Train]:  54%|█████▎    | 15/28 [01:10<00:43,  3.37s/it, loss=0.8498, acc=50.00%]Epoch 1 [Train]:  54%|█████▎    | 15/28 [01:11<00:43,  3.37s/it, loss=0.7767, acc=50.78%]Epoch 1 [Train]:  57%|█████▋    | 16/28 [01:11<00:29,  2.42s/it, loss=0.7767, acc=50.78%]Epoch 1 [Train]:  57%|█████▋    | 16/28 [01:29<00:29,  2.42s/it, loss=0.7188, acc=50.74%]Epoch 1 [Train]:  61%|██████    | 17/28 [01:29<01:18,  7.11s/it, loss=0.7188, acc=50.74%]Epoch 1 [Train]:  61%|██████    | 17/28 [01:29<01:18,  7.11s/it, loss=0.7505, acc=49.31%]Epoch 1 [Train]:  64%|██████▍   | 18/28 [01:29<00:50,  5.04s/it, loss=0.7505, acc=49.31%]Epoch 1 [Train]:  64%|██████▍   | 18/28 [01:29<00:50,  5.04s/it, loss=0.7285, acc=48.85%]Epoch 1 [Train]:  68%|██████▊   | 19/28 [01:29<00:32,  3.60s/it, loss=0.7285, acc=48.85%]Epoch 1 [Train]:  68%|██████▊   | 19/28 [01:29<00:32,  3.60s/it, loss=0.6988, acc=48.59%]Epoch 1 [Train]:  71%|███████▏  | 20/28 [01:29<00:20,  2.59s/it, loss=0.6988, acc=48.59%]Epoch 1 [Train]:  71%|███████▏  | 20/28 [01:45<00:20,  2.59s/it, loss=0.7214, acc=48.07%]Epoch 1 [Train]:  75%|███████▌  | 21/28 [01:45<00:46,  6.69s/it, loss=0.7214, acc=48.07%]Epoch 1 [Train]:  75%|███████▌  | 21/28 [01:46<00:46,  6.69s/it, loss=0.6853, acc=48.15%]Epoch 1 [Train]:  79%|███████▊  | 22/28 [01:46<00:28,  4.75s/it, loss=0.6853, acc=48.15%]Epoch 1 [Train]:  79%|███████▊  | 22/28 [01:46<00:28,  4.75s/it, loss=0.6981, acc=49.05%]Epoch 1 [Train]:  82%|████████▏ | 23/28 [01:46<00:16,  3.39s/it, loss=0.6981, acc=49.05%]Epoch 1 [Train]:  82%|████████▏ | 23/28 [01:46<00:16,  3.39s/it, loss=0.7927, acc=48.83%]Epoch 1 [Train]:  86%|████████▌ | 24/28 [01:46<00:09,  2.44s/it, loss=0.7927, acc=48.83%]Epoch 1 [Train]:  86%|████████▌ | 24/28 [02:03<00:09,  2.44s/it, loss=0.7746, acc=48.88%]Epoch 1 [Train]:  89%|████████▉ | 25/28 [02:03<00:20,  6.77s/it, loss=0.7746, acc=48.88%]Epoch 1 [Train]:  89%|████████▉ | 25/28 [02:03<00:20,  6.77s/it, loss=0.7425, acc=48.92%]Epoch 1 [Train]:  93%|█████████▎| 26/28 [02:03<00:09,  4.81s/it, loss=0.7425, acc=48.92%]Epoch 1 [Train]:  93%|█████████▎| 26/28 [02:03<00:09,  4.81s/it, loss=0.7422, acc=48.26%]Epoch 1 [Train]:  96%|█████████▋| 27/28 [02:03<00:03,  3.44s/it, loss=0.7422, acc=48.26%]Epoch 1 [Train]:  96%|█████████▋| 27/28 [02:04<00:03,  3.44s/it, loss=0.7155, acc=48.36%]Epoch 1 [Train]: 100%|██████████| 28/28 [02:04<00:00,  2.45s/it, loss=0.7155, acc=48.36%]Epoch 1 [Train]: 100%|██████████| 28/28 [02:04<00:00,  4.44s/it, loss=0.7155, acc=48.36%]
+Epoch 1 [Val]:   0%|          | 0/3 [00:00<?, ?it/s]Epoch 1 [Val]:   0%|          | 0/3 [00:03<?, ?it/s, loss=0.7066, acc=53.12%]Epoch 1 [Val]:  33%|███▎      | 1/3 [00:03<00:07,  3.76s/it, loss=0.7066, acc=53.12%]Epoch 1 [Val]:  33%|███▎      | 1/3 [00:03<00:07,  3.76s/it, loss=0.6987, acc=57.81%]Epoch 1 [Val]:  33%|███▎      | 1/3 [00:03<00:07,  3.76s/it, loss=0.6828, acc=63.83%]Epoch 1 [Val]: 100%|██████████| 3/3 [00:03<00:00,  1.03s/it, loss=0.6828, acc=63.83%]Epoch 1 [Val]: 100%|██████████| 3/3 [00:03<00:00,  1.32s/it, loss=0.6828, acc=63.83%]
+
+Epoch 1 Summary:
+  Metric            Train        Val
+  ----------------------------------
+  Loss             0.7450     0.6960
+  Accuracy         48.36%     63.83%
+  Precision        63.75%     63.83%
+  Recall           51.95%    100.00%
+  F1               57.25%     77.92%
+  AUC              0.4704     0.5721
+  LR: 5.05e-05
+
+  ✓ New best model saved! (Val Acc: 63.83%)
+
+================================================================================
+Epoch 2/2
+================================================================================
+Epoch 2 [Train]:   0%|          | 0/28 [00:00<?, ?it/s]Epoch 2 [Train]:   0%|          | 0/28 [00:17<?, ?it/s, loss=0.7122, acc=62.50%]Epoch 2 [Train]:   4%|▎         | 1/28 [00:17<07:42, 17.15s/it, loss=0.7122, acc=62.50%]Epoch 2 [Train]:   4%|▎         | 1/28 [00:17<07:42, 17.15s/it, loss=0.7425, acc=54.69%]Epoch 2 [Train]:   7%|▋         | 2/28 [00:17<03:07,  7.19s/it, loss=0.7425, acc=54.69%]Epoch 2 [Train]:   7%|▋         | 2/28 [00:17<03:07,  7.19s/it, loss=0.6320, acc=62.50%]Epoch 2 [Train]:  11%|█         | 3/28 [00:17<01:40,  4.01s/it, loss=0.6320, acc=62.50%]Epoch 2 [Train]:  11%|█         | 3/28 [00:18<01:40,  4.01s/it, loss=0.7441, acc=57.81%]Epoch 2 [Train]:  14%|█▍        | 4/28 [00:18<01:04,  2.70s/it, loss=0.7441, acc=57.81%]Epoch 2 [Train]:  14%|█▍        | 4/28 [00:34<01:04,  2.70s/it, loss=0.7199, acc=58.75%]Epoch 2 [Train]:  18%|█▊        | 5/28 [00:34<02:51,  7.45s/it, loss=0.7199, acc=58.75%]Epoch 2 [Train]:  18%|█▊        | 5/28 [00:34<02:51,  7.45s/it, loss=0.7287, acc=57.81%]Epoch 2 [Train]:  21%|██▏       | 6/28 [00:34<01:49,  5.00s/it, loss=0.7287, acc=57.81%]Epoch 2 [Train]:  21%|██▏       | 6/28 [00:34<01:49,  5.00s/it, loss=0.6591, acc=58.48%]Epoch 2 [Train]:  25%|██▌       | 7/28 [00:34<01:12,  3.44s/it, loss=0.6591, acc=58.48%]Epoch 2 [Train]:  25%|██▌       | 7/28 [00:35<01:12,  3.44s/it, loss=0.7273, acc=57.42%]Epoch 2 [Train]:  29%|██▊       | 8/28 [00:35<00:49,  2.47s/it, loss=0.7273, acc=57.42%]Epoch 2 [Train]:  29%|██▊       | 8/28 [00:51<00:49,  2.47s/it, loss=0.7108, acc=56.25%]Epoch 2 [Train]:  32%|███▏      | 9/28 [00:51<02:07,  6.72s/it, loss=0.7108, acc=56.25%]Epoch 2 [Train]:  32%|███▏      | 9/28 [00:51<02:07,  6.72s/it, loss=0.7060, acc=55.62%]Epoch 2 [Train]:  36%|███▌      | 10/28 [00:51<01:24,  4.72s/it, loss=0.7060, acc=55.62%]Epoch 2 [Train]:  36%|███▌      | 10/28 [00:51<01:24,  4.72s/it, loss=0.7446, acc=54.55%]Epoch 2 [Train]:  39%|███▉      | 11/28 [00:51<00:56,  3.34s/it, loss=0.7446, acc=54.55%]Epoch 2 [Train]:  39%|███▉      | 11/28 [00:51<00:56,  3.34s/it, loss=0.7219, acc=53.65%]Epoch 2 [Train]:  43%|████▎     | 12/28 [00:51<00:38,  2.40s/it, loss=0.7219, acc=53.65%]Epoch 2 [Train]:  43%|████▎     | 12/28 [01:07<00:38,  2.40s/it, loss=0.7110, acc=53.12%]Epoch 2 [Train]:  46%|████▋     | 13/28 [01:07<01:37,  6.53s/it, loss=0.7110, acc=53.12%]Epoch 2 [Train]:  46%|████▋     | 13/28 [01:08<01:37,  6.53s/it, loss=0.7235, acc=53.35%]Epoch 2 [Train]:  50%|█████     | 14/28 [01:08<01:04,  4.62s/it, loss=0.7235, acc=53.35%]Epoch 2 [Train]:  50%|█████     | 14/28 [01:08<01:04,  4.62s/it, loss=0.7287, acc=52.71%]Epoch 2 [Train]:  54%|█████▎    | 15/28 [01:08<00:42,  3.30s/it, loss=0.7287, acc=52.71%]Epoch 2 [Train]:  54%|█████▎    | 15/28 [01:08<00:42,  3.30s/it, loss=0.6908, acc=53.12%]Epoch 2 [Train]:  57%|█████▋    | 16/28 [01:08<00:28,  2.38s/it, loss=0.6908, acc=53.12%]Epoch 2 [Train]:  57%|█████▋    | 16/28 [01:24<00:28,  2.38s/it, loss=0.6901, acc=53.31%]Epoch 2 [Train]:  61%|██████    | 17/28 [01:24<01:09,  6.34s/it, loss=0.6901, acc=53.31%]Epoch 2 [Train]:  61%|██████    | 17/28 [01:24<01:09,  6.34s/it, loss=0.6795, acc=53.82%]Epoch 2 [Train]:  64%|██████▍   | 18/28 [01:24<00:45,  4.51s/it, loss=0.6795, acc=53.82%]Epoch 2 [Train]:  64%|██████▍   | 18/28 [01:24<00:45,  4.51s/it, loss=0.7212, acc=53.78%]Epoch 2 [Train]:  68%|██████▊   | 19/28 [01:24<00:29,  3.30s/it, loss=0.7212, acc=53.78%]Epoch 2 [Train]:  68%|██████▊   | 19/28 [01:25<00:29,  3.30s/it, loss=0.7086, acc=54.22%]Epoch 2 [Train]:  71%|███████▏  | 20/28 [01:25<00:19,  2.38s/it, loss=0.7086, acc=54.22%]Epoch 2 [Train]:  71%|███████▏  | 20/28 [01:40<00:19,  2.38s/it, loss=0.6926, acc=54.32%]Epoch 2 [Train]:  75%|███████▌  | 21/28 [01:40<00:45,  6.44s/it, loss=0.6926, acc=54.32%]Epoch 2 [Train]:  75%|███████▌  | 21/28 [01:41<00:45,  6.44s/it, loss=0.6942, acc=54.12%]Epoch 2 [Train]:  79%|███████▊  | 22/28 [01:41<00:27,  4.58s/it, loss=0.6942, acc=54.12%]Epoch 2 [Train]:  79%|███████▊  | 22/28 [01:41<00:27,  4.58s/it, loss=0.6974, acc=54.08%]Epoch 2 [Train]:  82%|████████▏ | 23/28 [01:41<00:16,  3.29s/it, loss=0.6974, acc=54.08%]Epoch 2 [Train]:  82%|████████▏ | 23/28 [01:41<00:16,  3.29s/it, loss=0.6542, acc=53.78%]Epoch 2 [Train]:  86%|████████▌ | 24/28 [01:41<00:09,  2.37s/it, loss=0.6542, acc=53.78%]Epoch 2 [Train]:  86%|████████▌ | 24/28 [01:58<00:09,  2.37s/it, loss=0.6569, acc=53.87%]Epoch 2 [Train]:  89%|████████▉ | 25/28 [01:58<00:19,  6.62s/it, loss=0.6569, acc=53.87%]Epoch 2 [Train]:  89%|████████▉ | 25/28 [01:58<00:19,  6.62s/it, loss=0.7083, acc=53.49%]Epoch 2 [Train]:  93%|█████████▎| 26/28 [01:58<00:09,  4.71s/it, loss=0.7083, acc=53.49%]Epoch 2 [Train]:  93%|█████████▎| 26/28 [01:58<00:09,  4.71s/it, loss=0.6996, acc=52.89%]Epoch 2 [Train]:  96%|█████████▋| 27/28 [01:58<00:03,  3.36s/it, loss=0.6996, acc=52.89%]Epoch 2 [Train]:  96%|█████████▋| 27/28 [01:58<00:03,  3.36s/it, loss=0.6671, acc=52.99%]Epoch 2 [Train]: 100%|██████████| 28/28 [01:58<00:00,  2.40s/it, loss=0.6671, acc=52.99%]Epoch 2 [Train]: 100%|██████████| 28/28 [01:58<00:00,  4.25s/it, loss=0.6671, acc=52.99%]
+Epoch 2 [Val]:   0%|          | 0/3 [00:00<?, ?it/s]Epoch 2 [Val]:   0%|          | 0/3 [00:02<?, ?it/s, loss=0.6649, acc=46.88%]Epoch 2 [Val]:  33%|███▎      | 1/3 [00:02<00:04,  2.48s/it, loss=0.6649, acc=46.88%]Epoch 2 [Val]:  33%|███▎      | 1/3 [00:02<00:04,  2.48s/it, loss=0.6861, acc=42.19%]Epoch 2 [Val]:  33%|███▎      | 1/3 [00:02<00:04,  2.48s/it, loss=0.7174, acc=36.17%]Epoch 2 [Val]: 100%|██████████| 3/3 [00:02<00:00,  1.43it/s, loss=0.7174, acc=36.17%]Epoch 2 [Val]: 100%|██████████| 3/3 [00:02<00:00,  1.12it/s, loss=0.7174, acc=36.17%]
+wandb: updating run metadata
+wandb: uploading history steps 53-57, summary, console lines 38-50
+wandb: 
+wandb: Run history:
+wandb: batch/train_loss ▃▂█▄▃▂▁▃▅▃▃▅▃▃▃▃▂▄▄▃▃▃▁▃▃▂▃▂▃▃▃▂▂▂▂▂▁▁▂▂
+wandb:            epoch ▁█
+wandb:    learning_rate █▁
+wandb:  overfitting_gap ▁█
+wandb:   train/accuracy ▁█
+wandb:        train/auc ▁█
+wandb:         train/f1 ▁█
+wandb:       train/loss █▁
+wandb:  train/precision ▁█
+wandb:     train/recall ▁█
+wandb:               +9 ...
+wandb: 
+wandb: Run summary:
+wandb: batch/train_loss 0.66714
+wandb:            epoch 2
+wandb:    learning_rate 0.0
+wandb:  overfitting_gap 16.82414
+wandb:   train/accuracy 52.99435
+wandb:        train/auc 0.51476
+wandb:         train/f1 60
+wandb:       train/loss 0.70261
+wandb:  train/precision 69.1796
+wandb:     train/recall 52.97114
+wandb:               +9 ...
+wandb: 
+wandb: 🚀 View run teacher_image_only_20260301_175412 at: https://wandb.ai/ai4vs/c3_net/runs/yhbp465z
+wandb: ⭐️ View project at: https://wandb.ai/ai4vs/c3_net
+wandb: Synced 5 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20260301_175412-yhbp465z/logs
+
+Epoch 2 Summary:
+  Metric            Train        Val
+  ----------------------------------
+  Loss             0.7026     0.6895
+  Accuracy         52.99%     36.17%
+  Precision        69.18%      0.00%
+  Recall           52.97%      0.00%
+  F1               60.00%      0.00%
+  AUC              0.5148     0.6230
+  LR: 1.00e-06
+
+================================================================================
+Training Complete!
+================================================================================
+
+Best Model — Epoch 1:
+  Accuracy:  63.83%
+  Precision: 63.83%
+  Recall:    100.00%
+  F1:        77.92%
+  AUC:       0.5721
+
+Checkpoints saved to: /media/16TB_Storage/kavin/models/c3-net/teacher_image_only_20260301_175413
+================================================================================

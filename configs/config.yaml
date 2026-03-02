@@ -13,8 +13,18 @@ data:
 model:
   # Top-level model params
   num_classes: 2
-  freeze_bert: true
   dropout: 0.3
+
+  # Modality selection: "image_only" | "image_gaze" | "image_text" | "image_gaze_text"
+  # modality: "image_only"
+  modality: "image_gaze"
+  # modality: "image_text"
+  # modality: "image_gaze_text"
+
+  # BERT freeze configuration (only used when modality is "image_gaze_text")
+  # Number of epochs to keep BERT frozen before unfreezing
+  # Set to 0 to train BERT unfrozen from epoch 1
+  bert_freeze_epochs: 5
   
   # Image Encoder (ViT)
   image_encoder:
@@ -36,6 +46,7 @@ training:
   batch_size: 32
   num_epochs: 20
   # num_epochs: 5  # Start with 5 to test
+  # num_epochs: 2
   learning_rate: 0.0001
   weight_decay: 0.01
   device: 'cuda'  # 'cuda' or 'cpu'

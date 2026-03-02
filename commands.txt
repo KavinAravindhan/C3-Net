@@ -16,4 +16,5 @@ python3 test_attention.py
 python3 test_teacher.py
 
 python3 train.py
+nohup python3 train.py > z_train_test.log 2>&1 &
 nohup python3 train.py > z_train.log 2>&1 &

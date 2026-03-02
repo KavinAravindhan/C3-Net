@@ -9,426 +9,469 @@ import json
 from datetime import datetime
 import wandb
 from dotenv import load_dotenv
+from sklearn.metrics import precision_score, recall_score, f1_score, roc_auc_score
+import numpy as np
 
 from data.dataset import MIMICEyeDataset, collate_fn
-from models.encoders import ImageEncoder, GazeEncoder, ImageOnlyClassifier, GazePredictor
-from models.attention import GazeGuidedFusion
+from models.teacher import MultimodalTeacher
 
 # Load environment variables
 load_dotenv()
 
+
 class C3NetTrainer:
     """
-    Training system for C3-Net (Cognitive Causal Chain Network)
-    Current implementation: Basic student path training
-    - Image encoder + Gaze encoder + Fusion + Classifier
-    - Single classification loss
-    """
+    Training system for C3-Net - Teacher Model Only.
     
+    Modality-aware: controlled by config['model']['modality']
+        image_only      — image encoder only
+        image_gaze      — image + gaze encoders
+        image_text      — image + text encoders
+        image_gaze_text — all three encoders
+    
+    Staged BERT training (for text-containing modalities):
+        Stage 1 (epochs 1 to bert_freeze_epochs):  BERT frozen
+        Stage 2 (bert_freeze_epochs+1 onwards):    BERT unfrozen with 10x lower LR
+        bert_freeze_epochs=0 means BERT unfrozen from epoch 1
+    
+    Loss: Weighted cross-entropy (handles class imbalance)
+    Metrics: Accuracy, Precision, Recall, F1, AUC
+    """
+
     def __init__(self, config):
         self.config = config
 
+        # Modality and BERT freeze config
+        self.modality          = config['model'].get('modality', 'image_gaze_text')
+        self.bert_freeze_epochs = config['model'].get('bert_freeze_epochs', 5)
+        self.uses_text         = self.modality in ('image_text', 'image_gaze_text')
+        self.uses_gaze         = self.modality in ('image_gaze', 'image_gaze_text')
+        self.bert_unfrozen     = False  # tracks whether BERT has been unfrozen yet
+
+        # Device setup
         if config['training']['device'] == 'cuda' and torch.cuda.is_available():
             gpu_id = config['training']['gpu_id']
             self.device = torch.device(f'cuda:{gpu_id}')
-            print(f"Using GPU {gpu_id}")
+            print(f"Using GPU {gpu_id}: {torch.cuda.get_device_name(gpu_id)}")
         else:
             self.device = torch.device('cpu')
             print("Using CPU")
-        
-        print("="*80)
-        print("Initializing C3-Net Training")
-        print("="*80)
-        
-        # Initialize models
-        print("\n1. Loading models...")
-        self.image_encoder = ImageEncoder(
-            model_name=config['model']['image_encoder']['type'],
-            pretrained=config['model']['image_encoder']['pretrained']
-        ).to(self.device)
-        
-        self.gaze_encoder = GazeEncoder(
-            spatial_hidden_dim=config['model']['gaze_encoder']['spatial_hidden_dim'],
-            temporal_hidden_dim=config['model']['gaze_encoder']['temporal_hidden_dim'],
-            lstm_layers=config['model']['gaze_encoder']['lstm_layers'],
-            dropout=config['model']['gaze_encoder']['dropout']
-        ).to(self.device)
-        
-        self.gaze_fusion = GazeGuidedFusion(
-            image_dim=config['model']['image_encoder']['embed_dim'],
-            gaze_dim=config['model']['gaze_encoder']['spatial_hidden_dim'] + 
-                     config['model']['gaze_encoder']['temporal_hidden_dim']
-        ).to(self.device)
-        
-        self.classifier = ImageOnlyClassifier(
-            input_dim=config['model']['image_encoder']['embed_dim'],
-            hidden_dim=512,
-            num_classes=2,
-            dropout=0.3
-        ).to(self.device)
 
-        self.gaze_predictor = GazePredictor(
-            input_dim=config['model']['image_encoder']['embed_dim'],
-            hidden_dim=256,
-            num_patches=196
-        ).to(self.device)
-        
-        # Combine all parameters for optimizer
-        self.all_params = (
-            list(self.image_encoder.parameters()) +
-            list(self.gaze_encoder.parameters()) +
-            list(self.gaze_fusion.parameters()) +
-            list(self.classifier.parameters()) +
-            list(self.gaze_predictor.parameters())
-        )
-        
-        # Initialize optimizer
+        print("="*80)
+        print("Initializing C3-Net Teacher Training")
+        print("="*80)
+        print(f"Modality:           {self.modality}")
+        if self.uses_text:
+            if self.bert_freeze_epochs == 0:
+                print(f"BERT training:      Unfrozen from epoch 1")
+            else:
+                print(f"BERT freeze epochs: {self.bert_freeze_epochs}")
+
+        # ===== Model =====
+        print("\n1. Loading MultimodalTeacher...")
+        self.teacher = MultimodalTeacher(config=config).to(self.device)
+
+        # ===== Loss =====
+        # Weighted cross-entropy: Normal=33%, Abnormal=67%
+        class_weights = torch.tensor([1.0/0.33, 1.0/0.67]).to(self.device)
+        class_weights = class_weights / class_weights.sum() * 2.0
+        print(f"\n2. Class weights: Normal={class_weights[0]:.3f}, Abnormal={class_weights[1]:.3f}")
+        self.criterion = nn.CrossEntropyLoss(weight=class_weights)
+
+        # ===== Optimizer =====
+        self.lr      = config['training']['learning_rate']
+        self.bert_lr = self.lr * 0.1  # 10x lower LR for BERT when unfrozen
+
+        # Non-BERT params always trained at full LR
+        self.non_bert_params = [
+            p for name, p in self.teacher.named_parameters()
+            if 'text_encoder' not in name and p.requires_grad
+        ]
         self.optimizer = optim.AdamW(
-            self.all_params,
-            lr=config['training']['learning_rate'],
+            self.non_bert_params,
+            lr=self.lr,
             weight_decay=config['training']['weight_decay']
         )
-        
-        # # Loss function
-        # self.criterion = nn.CrossEntropyLoss()
-        # self.gaze_criterion = nn.MSELoss()
 
-        # Loss function with class weights
-        # Normal (33%) gets higher weight, Abnormal (67%) gets lower weight
-        # Inverse frequency weighting: 1/freq normalized
-        class_weights = torch.tensor([1.0/0.33, 1.0/0.67]).to(self.device)
-        # Normalize to sum to 2.0 (standard practice)
-        class_weights = class_weights / class_weights.sum() * 2.0
-        print(f"  Class weights: Normal={class_weights[0]:.3f}, Abnormal={class_weights[1]:.3f}")
+        # If BERT is unfrozen from epoch 1, add its params immediately
+        if self.uses_text and self.bert_freeze_epochs == 0:
+            self.teacher.unfreeze_bert()
+            self.optimizer.add_param_group({
+                'params': [p for p in self.teacher.text_encoder.parameters()],
+                'lr':     self.bert_lr
+            })
+            self.bert_unfrozen = True
 
-        self.criterion = nn.CrossEntropyLoss(weight=class_weights)
-        self.gaze_criterion = nn.KLDivLoss(reduction='batchmean')
+        # Scheduler: cosine annealing over full training
+        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            self.optimizer,
+            T_max=config['training']['num_epochs'],
+            eta_min=1e-6
+        )
 
-        # Loss weights (normalized to sum to 1.0)
-        self.lambda_gaze_pred = config['training']['lambda_gaze_pred']
-        self.lambda_classification = 1.0 - self.lambda_gaze_pred
-        
-        # Metrics tracking
-        self.train_losses = []
-        self.val_losses = []
-        self.train_accs = []
-        self.val_accs = []
-        self.best_val_acc = 0.0
-        
-        # Initialize wandb
+        # ===== Metrics tracking =====
+        self.best_val_acc  = 0.0
+        self.best_val_f1   = 0.0
+        self.best_val_auc  = 0.0
+        self.best_epoch    = 0
+        self.best_metrics  = {}
+        self.train_history = []
+        self.val_history   = []
+
+        # ===== Wandb =====
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         wandb.init(
             entity="ai4vs",
             project="c3_net",
+            name=f"teacher_{self.modality}_{timestamp}",
             config={
-                "learning_rate": config['training']['learning_rate'],
-                "batch_size": config['training']['batch_size'],
-                "num_epochs": config['training']['num_epochs'],
-                "lambda_classification": self.lambda_classification,
-                "lambda_gaze_pred": self.lambda_gaze_pred,
-                "image_encoder": config['model']['image_encoder']['type'],
-                "gaze_spatial_dim": config['model']['gaze_encoder']['spatial_hidden_dim'],
-                "gaze_temporal_dim": config['model']['gaze_encoder']['temporal_hidden_dim'],
+                "model":              "MultimodalTeacher",
+                "modality":           self.modality,
+                "learning_rate":      self.lr,
+                "bert_lr":            self.bert_lr if self.uses_text else "N/A",
+                "batch_size":         config['training']['batch_size'],
+                "num_epochs":         config['training']['num_epochs'],
+                "weight_decay":       config['training']['weight_decay'],
+                "bert_freeze_epochs": self.bert_freeze_epochs if self.uses_text else "N/A",
+                "image_encoder":      config['model']['image_encoder']['type'],
+                "class_weights":      f"Normal={class_weights[0]:.3f}, Abnormal={class_weights[1]:.3f}",
             }
         )
-        
-        print(f"\n✓ Models initialized on {self.device}")
-        print(f"✓ Total trainable parameters: {sum(p.numel() for p in self.all_params):,}")
-    
-    def train_epoch(self, train_loader, epoch):
-        """Train for one epoch"""
-        self.image_encoder.train()
-        self.gaze_encoder.train()
-        self.gaze_fusion.train()
-        self.classifier.train()
-        
-        total_loss = 0.0
-        correct = 0
-        total = 0
-        
-        pbar = tqdm(train_loader, desc=f"Epoch {epoch+1} [Train]")
-        
-        for batch_idx, batch in enumerate(pbar):
-            # Move to device
-            images = batch['images'].to(self.device)
-            gaze_heatmaps = batch['gaze_heatmaps'].to(self.device)
-            gaze_sequences = batch['gaze_sequences'].to(self.device)
+
+        total_params     = sum(p.numel() for p in self.teacher.parameters())
+        trainable_params = sum(p.numel() for p in self.teacher.parameters() if p.requires_grad)
+        bert_status      = "unfrozen from epoch 1" if (self.uses_text and self.bert_freeze_epochs == 0) \
+                           else f"frozen for {self.bert_freeze_epochs} epochs" if self.uses_text \
+                           else "N/A (no text encoder)"
+        print(f"\n✓ Teacher initialized")
+        print(f"  Total params:     {total_params:,}")
+        print(f"  Trainable params: {trainable_params:,}")
+        print(f"  BERT status:      {bert_status}")
+
+    # ------------------------------------------------------------------
+    def _get_batch_inputs(self, batch):
+        """
+        Extract and move batch inputs to device based on active modality.
+        Returns only the inputs needed for the current modality.
+        Unused modality inputs are returned as None.
+        """
+        images = batch['images'].to(self.device)
+        labels = batch['labels'].to(self.device)
+
+        # Gaze inputs: only for image_gaze and image_gaze_text
+        if self.uses_gaze:
+            gaze_heatmaps    = batch['gaze_heatmaps'].to(self.device)
+            gaze_sequences   = batch['gaze_sequences'].to(self.device)
             gaze_seq_lengths = batch['gaze_seq_lengths']
-            labels = batch['labels'].to(self.device)
-            
-            # Forward pass
+        else:
+            gaze_heatmaps    = None
+            gaze_sequences   = None
+            gaze_seq_lengths = None
+
+        # Text inputs: only for image_text and image_gaze_text
+        if self.uses_text:
+            text_token_ids       = batch['text_token_ids'].to(self.device)
+            text_attention_masks = batch['text_attention_masks'].to(self.device)
+        else:
+            text_token_ids       = None
+            text_attention_masks = None
+
+        return images, gaze_heatmaps, gaze_sequences, gaze_seq_lengths, \
+               text_token_ids, text_attention_masks, labels
+
+    # ------------------------------------------------------------------
+    def _compute_metrics(self, all_labels, all_preds, all_probs):
+        """Compute accuracy, precision, recall, F1, AUC."""
+        acc  = np.mean(np.array(all_preds) == np.array(all_labels))
+        prec = precision_score(all_labels, all_preds, zero_division=0)
+        rec  = recall_score(all_labels, all_preds, zero_division=0)
+        f1   = f1_score(all_labels, all_preds, zero_division=0)
+        try:
+            auc = roc_auc_score(all_labels, all_probs)
+        except ValueError:
+            auc = 0.0
+        return {'accuracy': acc, 'precision': prec, 'recall': rec, 'f1': f1, 'auc': auc}
+
+    # ------------------------------------------------------------------
+    def train_epoch(self, train_loader, epoch):
+        """Train for one epoch."""
+        self.teacher.train()
+
+        total_loss = 0.0
+        all_labels = []
+        all_preds  = []
+        all_probs  = []
+
+        pbar = tqdm(train_loader, desc=f"Epoch {epoch+1} [Train]")
+
+        for batch_idx, batch in enumerate(pbar):
+            images, gaze_heatmaps, gaze_sequences, gaze_seq_lengths, \
+            text_token_ids, text_attention_masks, labels = self._get_batch_inputs(batch)
+
             self.optimizer.zero_grad()
-            
-            # 1. Encode image
-            patch_features, cls_token = self.image_encoder(images)
-            
-            # 2. Encode gaze
-            gaze_weights, gaze_features = self.gaze_encoder(
-                gaze_heatmaps, gaze_sequences, gaze_seq_lengths
+
+            logits, _ = self.teacher(
+                images, gaze_heatmaps, gaze_sequences, gaze_seq_lengths,
+                text_token_ids, text_attention_masks
             )
-            
-            # 3. Fuse with gaze guidance
-            fused_features, attention_map = self.gaze_fusion(
-                patch_features, cls_token, gaze_weights, gaze_features
-            )
-            
-            # # 4. Predict gaze from image (auxiliary task)
-            # predicted_gaze = self.gaze_predictor(patch_features)  # [B, 196]
-            # # Reshape to match gaze_weights [B, 196, 1]
-            # target_gaze = gaze_weights.squeeze(-1)  # [B, 196]
-            
-            # 4. Predict gaze from image (auxiliary task)
-            predicted_gaze = self.gaze_predictor(patch_features)  # [B, 196]
-            # For KL divergence: apply log_softmax to predictions, target already normalized
-            predicted_gaze_log = torch.log_softmax(predicted_gaze, dim=1)  # [B, 196]
-            target_gaze = gaze_weights.squeeze(-1)  # [B, 196]
 
-            # 5. Classify
-            logits = self.classifier(fused_features)
-
-            # # Compute losses
-            # classification_loss = self.criterion(logits, labels)
-            # gaze_prediction_loss = self.gaze_criterion(predicted_gaze, target_gaze)
-
-            # Compute losses
-            classification_loss = self.criterion(logits, labels)
-            gaze_prediction_loss = self.gaze_criterion(predicted_gaze_log, target_gaze)
-
-            # Total loss
-            loss = (self.lambda_classification * classification_loss + 
-                    self.lambda_gaze_pred * gaze_prediction_loss)
-            
-            # Track individual losses (optional, for monitoring)
-            if batch_idx == 0:  # Print first batch of epoch
-                print(f"\n  Losses: cls={classification_loss.item():.4f}, gaze={gaze_prediction_loss.item():.4f}")
-            
-            # Backward pass
+            loss = self.criterion(logits, labels)
             loss.backward()
-            
-            # Gradient clipping
-            torch.nn.utils.clip_grad_norm_(self.all_params, max_norm=1.0)
-            
-            # Update weights
+
+            torch.nn.utils.clip_grad_norm_(
+                self.teacher.parameters(), max_norm=1.0
+            )
             self.optimizer.step()
-            
-            # Track metrics
+
+            # Collect predictions
+            probs = torch.softmax(logits, dim=1)[:, 1]
+            preds = torch.argmax(logits, dim=1)
+
             total_loss += loss.item()
-            predictions = torch.argmax(logits, dim=1)
-            correct += (predictions == labels).sum().item()
-            total += labels.size(0)
-            
-            # Update progress bar
+            all_labels += labels.cpu().tolist()
+            all_preds  += preds.cpu().tolist()
+            all_probs  += probs.detach().cpu().tolist()
+
+            running_acc = np.mean(np.array(all_preds) == np.array(all_labels))
             pbar.set_postfix({
                 'loss': f'{loss.item():.4f}',
-                'acc': f'{100*correct/total:.2f}%'
+                'acc':  f'{running_acc*100:.2f}%'
             })
 
-            # Log to wandb (per batch - optional, can be noisy)
-            wandb.log({
-                    "train/batch_loss": loss.item(),
-                    "train/batch_cls_loss": classification_loss.item(),
-                    "train/batch_gaze_loss": gaze_prediction_loss.item(),
-                })
-            
-            # # Log to wandb every 10 batches
-            # if batch_idx % 10 == 0:
-            #     wandb.log({
-            #         "train/batch_loss": loss.item(),
-            #         "train/batch_cls_loss": classification_loss.item(),
-            #         "train/batch_gaze_loss": gaze_prediction_loss.item(),
-            #     })
-                
-        epoch_loss = total_loss / len(train_loader)
-        epoch_acc = correct / total
-        
-        return epoch_loss, epoch_acc
-    
+            # Log batch loss to wandb
+            wandb.log({"batch/train_loss": loss.item()})
+
+        epoch_loss    = total_loss / len(train_loader)
+        epoch_metrics = self._compute_metrics(all_labels, all_preds, all_probs)
+
+        return epoch_loss, epoch_metrics
+
+    # ------------------------------------------------------------------
     def validate(self, val_loader, epoch):
-        """Validate the model"""
-        self.image_encoder.eval()
-        self.gaze_encoder.eval()
-        self.gaze_fusion.eval()
-        self.classifier.eval()
-        
+        """Validate for one epoch."""
+        self.teacher.eval()
+
         total_loss = 0.0
-        correct = 0
-        total = 0
-        
+        all_labels = []
+        all_preds  = []
+        all_probs  = []
+
+        pbar = tqdm(val_loader, desc=f"Epoch {epoch+1} [Val]")
+
         with torch.no_grad():
-            pbar = tqdm(val_loader, desc=f"Epoch {epoch+1} [Val]")
-            
             for batch in pbar:
-                images = batch['images'].to(self.device)
-                gaze_heatmaps = batch['gaze_heatmaps'].to(self.device)
-                gaze_sequences = batch['gaze_sequences'].to(self.device)
-                gaze_seq_lengths = batch['gaze_seq_lengths']
-                labels = batch['labels'].to(self.device)
-                
-                # Forward pass (same as training)
-                patch_features, cls_token = self.image_encoder(images)
-                gaze_weights, gaze_features = self.gaze_encoder(
-                    gaze_heatmaps, gaze_sequences, gaze_seq_lengths
+                images, gaze_heatmaps, gaze_sequences, gaze_seq_lengths, \
+                text_token_ids, text_attention_masks, labels = self._get_batch_inputs(batch)
+
+                logits, _ = self.teacher(
+                    images, gaze_heatmaps, gaze_sequences, gaze_seq_lengths,
+                    text_token_ids, text_attention_masks
                 )
-                fused_features, attention_map = self.gaze_fusion(
-                    patch_features, cls_token, gaze_weights, gaze_features
-                )
-                
-                # # Predict gaze from image (auxiliary task)
-                # predicted_gaze = self.gaze_predictor(patch_features)  # [B, 196]
-                # # Reshape to match gaze_weights [B, 196, 1]
-                # target_gaze = gaze_weights.squeeze(-1)  # [B, 196]
 
-                # Predict gaze from image (auxiliary task)
-                predicted_gaze = self.gaze_predictor(patch_features)  # [B, 196]
-                # For KL divergence: apply log_softmax to predictions
-                predicted_gaze_log = torch.log_softmax(predicted_gaze, dim=1)  # [B, 196]
-                target_gaze = gaze_weights.squeeze(-1)  # [B, 196]
+                loss  = self.criterion(logits, labels)
+                probs = torch.softmax(logits, dim=1)[:, 1]
+                preds = torch.argmax(logits, dim=1)
 
-                # Classify
-                logits = self.classifier(fused_features)
-
-                # # Compute losses
-                # classification_loss = self.criterion(logits, labels)
-                # gaze_prediction_loss = self.gaze_criterion(predicted_gaze, target_gaze)
-
-                # Compute losses
-                classification_loss = self.criterion(logits, labels)
-                gaze_prediction_loss = self.gaze_criterion(predicted_gaze_log, target_gaze)
-
-                # Total loss
-                loss = (self.lambda_classification * classification_loss + 
-                        self.lambda_gaze_pred * gaze_prediction_loss)
-                
-                # Track metrics
                 total_loss += loss.item()
-                predictions = torch.argmax(logits, dim=1)
-                correct += (predictions == labels).sum().item()
-                total += labels.size(0)
-                
+                all_labels += labels.cpu().tolist()
+                all_preds  += preds.cpu().tolist()
+                all_probs  += probs.cpu().tolist()
+
+                running_acc = np.mean(np.array(all_preds) == np.array(all_labels))
                 pbar.set_postfix({
                     'loss': f'{loss.item():.4f}',
-                    'acc': f'{100*correct/total:.2f}%'
+                    'acc':  f'{running_acc*100:.2f}%'
                 })
-        
-        epoch_loss = total_loss / len(val_loader)
-        epoch_acc = correct / total
-        
-        return epoch_loss, epoch_acc
-    
+
+        epoch_loss    = total_loss / len(val_loader)
+        epoch_metrics = self._compute_metrics(all_labels, all_preds, all_probs)
+
+        return epoch_loss, epoch_metrics
+
+    # ------------------------------------------------------------------
+    def _unfreeze_bert(self):
+        """Unfreeze BERT and add its params to optimizer with lower LR."""
+        self.teacher.unfreeze_bert()
+        self.optimizer.add_param_group({
+            'params': [p for p in self.teacher.text_encoder.parameters()],
+            'lr':     self.bert_lr
+        })
+        self.bert_unfrozen = True
+        trainable = sum(p.numel() for p in self.teacher.parameters() if p.requires_grad)
+        print(f"\n  ✓ BERT unfrozen. Total trainable params: {trainable:,}")
+
+    # ------------------------------------------------------------------
     def train(self, train_loader, val_loader, num_epochs, save_dir='checkpoints'):
-        """Main training loop"""
+        """Main training loop."""
         os.makedirs(save_dir, exist_ok=True)
-        
+
+        # Determine stage labels for print output
+        has_stages = self.uses_text and self.bert_freeze_epochs > 0
+
         print("\n" + "="*80)
-        print("Starting Training")
+        print("Starting Teacher Training")
         print("="*80)
-        print(f"Total epochs: {num_epochs}")
-        print(f"Train samples: {len(train_loader.dataset)}")
-        print(f"Val samples: {len(val_loader.dataset)}")
-        print(f"Batch size: {train_loader.batch_size}")
-        
+        print(f"Total epochs:   {num_epochs}")
+        print(f"Train samples:  {len(train_loader.dataset)}")
+        print(f"Val samples:    {len(val_loader.dataset)}")
+        print(f"Batch size:     {train_loader.batch_size}")
+        print(f"Modality:       {self.modality}")
+        if has_stages:
+            print(f"Stage 1:        Epochs 1-{self.bert_freeze_epochs}  (BERT frozen)")
+            print(f"Stage 2:        Epochs {self.bert_freeze_epochs+1}+  (BERT unfrozen, LR={self.bert_lr:.2e})")
+        elif self.uses_text and self.bert_freeze_epochs == 0:
+            print(f"BERT training:  Unfrozen from epoch 1 (LR={self.bert_lr:.2e})")
+        else:
+            print(f"BERT:           Not used for modality '{self.modality}'")
+
         for epoch in range(num_epochs):
+
+            # ===== Stage transition: unfreeze BERT at the right epoch =====
+            if self.uses_text and not self.bert_unfrozen and epoch == self.bert_freeze_epochs:
+                print(f"\n{'='*80}")
+                print(f"STAGE 2: Unfreezing BERT")
+                print(f"{'='*80}")
+                self._unfreeze_bert()
+
+            # Determine current stage label for display
+            if has_stages:
+                stage = '1' if epoch < self.bert_freeze_epochs else '2'
+            else:
+                stage = 'N/A'
+
             print(f"\n{'='*80}")
-            print(f"Epoch {epoch+1}/{num_epochs}")
+            if has_stages:
+                print(f"Epoch {epoch+1}/{num_epochs}  |  Stage {stage}")
+            else:
+                print(f"Epoch {epoch+1}/{num_epochs}")
             print('='*80)
-            
-            # Train
-            train_loss, train_acc = self.train_epoch(train_loader, epoch)
-            self.train_losses.append(train_loss)
-            self.train_accs.append(train_acc)
-            
-            # Validate
-            val_loss, val_acc = self.validate(val_loader, epoch)
-            self.val_losses.append(val_loss)
-            self.val_accs.append(val_acc)
-            
-            # Print epoch summary
+
+            # Train & validate
+            train_loss, train_metrics = self.train_epoch(train_loader, epoch)
+            val_loss,   val_metrics   = self.validate(val_loader, epoch)
+
+            self.scheduler.step()
+            current_lr = self.scheduler.get_last_lr()[0]
+
+            # ===== Print epoch summary =====
             print(f"\nEpoch {epoch+1} Summary:")
-            print(f"  Train Loss: {train_loss:.4f} | Train Acc: {train_acc*100:.2f}%")
-            print(f"  Val Loss:   {val_loss:.4f} | Val Acc:   {val_acc*100:.2f}%")
-            
-            # Save best model
-            if val_acc > self.best_val_acc:
-                self.best_val_acc = val_acc
+            print(f"  {'Metric':<12} {'Train':>10} {'Val':>10}")
+            print(f"  {'-'*34}")
+            print(f"  {'Loss':<12} {train_loss:>10.4f} {val_loss:>10.4f}")
+            print(f"  {'Accuracy':<12} {train_metrics['accuracy']*100:>9.2f}% {val_metrics['accuracy']*100:>9.2f}%")
+            print(f"  {'Precision':<12} {train_metrics['precision']*100:>9.2f}% {val_metrics['precision']*100:>9.2f}%")
+            print(f"  {'Recall':<12} {train_metrics['recall']*100:>9.2f}% {val_metrics['recall']*100:>9.2f}%")
+            print(f"  {'F1':<12} {train_metrics['f1']*100:>9.2f}% {val_metrics['f1']*100:>9.2f}%")
+            print(f"  {'AUC':<12} {train_metrics['auc']:>10.4f} {val_metrics['auc']:>10.4f}")
+            print(f"  LR: {current_lr:.2e}")
+
+            # ===== Save best model (by val accuracy) =====
+            if val_metrics['accuracy'] > self.best_val_acc:
+                self.best_val_acc = val_metrics['accuracy']
+                self.best_val_f1  = val_metrics['f1']
+                self.best_val_auc = val_metrics['auc']
+                self.best_epoch   = epoch + 1
+                self.best_metrics = val_metrics.copy()
                 self.save_checkpoint(
-                    os.path.join(save_dir, 'best_model.pth'),
-                    epoch, val_acc
+                    os.path.join(save_dir, 'best_model.pth'), epoch, val_metrics
                 )
-                print(f"  ✓ New best model saved! (Val Acc: {val_acc*100:.2f}%)")
-            
-            # Log epoch metrics to wandb
+                print(f"\n  ✓ New best model saved! (Val Acc: {val_metrics['accuracy']*100:.2f}%)")
+
+            # ===== Wandb logging =====
             wandb.log({
                 "epoch": epoch + 1,
-                "train/loss": train_loss,
-                "train/accuracy": train_acc * 100,
-                "val/loss": val_loss,
-                "val/accuracy": val_acc * 100,
+                "learning_rate": current_lr,
+
+                "train/loss":      train_loss,
+                "train/accuracy":  train_metrics['accuracy'] * 100,
+                "train/precision": train_metrics['precision'] * 100,
+                "train/recall":    train_metrics['recall'] * 100,
+                "train/f1":        train_metrics['f1'] * 100,
+                "train/auc":       train_metrics['auc'],
+
+                "val/loss":        val_loss,
+                "val/accuracy":    val_metrics['accuracy'] * 100,
+                "val/precision":   val_metrics['precision'] * 100,
+                "val/recall":      val_metrics['recall'] * 100,
+                "val/f1":          val_metrics['f1'] * 100,
+                "val/auc":         val_metrics['auc'],
+
                 "val/best_accuracy": self.best_val_acc * 100,
-                "overfitting_gap": (train_acc - val_acc) * 100,
+                "val/best_f1":       self.best_val_f1 * 100,
+                "val/best_auc":      self.best_val_auc,
+
+                "overfitting_gap": (train_metrics['accuracy'] - val_metrics['accuracy']) * 100,
             })
-            
-            # Save checkpoint every 5 epochs
+
+            # History
+            self.train_history.append({'epoch': epoch+1, 'loss': train_loss, **train_metrics})
+            self.val_history.append({'epoch': epoch+1, 'loss': val_loss, **val_metrics})
+
+            # Checkpoint every 5 epochs
             if (epoch + 1) % 5 == 0:
                 self.save_checkpoint(
                     os.path.join(save_dir, f'checkpoint_epoch_{epoch+1}.pth'),
-                    epoch, val_acc
+                    epoch, val_metrics
                 )
-        
-        # Save training history
-        self.save_training_history(save_dir)
 
+        # ===== Final summary =====
+        self.save_training_history(save_dir)
         wandb.finish()
-        
+
         print("\n" + "="*80)
         print("Training Complete!")
         print("="*80)
-        print(f"Best validation accuracy: {self.best_val_acc*100:.2f}%")
-    
-    def save_checkpoint(self, path, epoch, val_acc):
-        """Save model checkpoint"""
+        print(f"\nBest Model — Epoch {self.best_epoch}:")
+        print(f"  Accuracy:  {self.best_metrics['accuracy']*100:.2f}%")
+        print(f"  Precision: {self.best_metrics['precision']*100:.2f}%")
+        print(f"  Recall:    {self.best_metrics['recall']*100:.2f}%")
+        print(f"  F1:        {self.best_metrics['f1']*100:.2f}%")
+        print(f"  AUC:       {self.best_metrics['auc']:.4f}")
+        print(f"\nCheckpoints saved to: {save_dir}")
+        print("="*80)
+
+    # ------------------------------------------------------------------
+    def save_checkpoint(self, path, epoch, val_metrics):
+        """Save teacher model checkpoint."""
         torch.save({
-            'epoch': epoch,
-            'image_encoder_state_dict': self.image_encoder.state_dict(),
-            'gaze_encoder_state_dict': self.gaze_encoder.state_dict(),
-            'gaze_fusion_state_dict': self.gaze_fusion.state_dict(),
-            'classifier_state_dict': self.classifier.state_dict(),
+            'epoch':                epoch,
+            'modality':             self.modality,
+            'teacher_state_dict':   self.teacher.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
-            'val_acc': val_acc,
+            'val_metrics':          val_metrics,
         }, path)
-    
+
+    # ------------------------------------------------------------------
     def save_training_history(self, save_dir):
-        """Save training metrics"""
+        """Save full training history to JSON."""
         history = {
-            'train_losses': self.train_losses,
-            'val_losses': self.val_losses,
-            'train_accs': self.train_accs,
-            'val_accs': self.val_accs,
-            'best_val_acc': self.best_val_acc
+            'modality':     self.modality,
+            'train':        self.train_history,
+            'val':          self.val_history,
+            'best_epoch':   self.best_epoch,
+            'best_metrics': self.best_metrics,
         }
-        
         with open(os.path.join(save_dir, 'training_history.json'), 'w') as f:
             json.dump(history, f, indent=2)
 
 
+# ==============================================================================
 def main():
-    # Load config
     with open('configs/config.yaml', 'r') as f:
         config = yaml.safe_load(f)
-    
-    # Create datasets
+
     print("Loading datasets...")
     train_dataset = MIMICEyeDataset(
         root_dir='/media/16TB_Storage/kavin/dataset/processed_mimic_eye',
         split='train',
         config=config
     )
-    
     val_dataset = MIMICEyeDataset(
         root_dir='/media/16TB_Storage/kavin/dataset/processed_mimic_eye',
         split='val',
         config=config
     )
-    
-    # Create dataloaders
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=config['training']['batch_size'],
@@ -437,7 +480,6 @@ def main():
         num_workers=4,
         pin_memory=True
     )
-    
     val_loader = DataLoader(
         val_dataset,
         batch_size=config['training']['batch_size'],
@@ -446,22 +488,24 @@ def main():
         num_workers=4,
         pin_memory=True
     )
-    
-    # Initialize trainer
+
     trainer = C3NetTrainer(config)
 
-    # Create unique checkpoint directory with timestamp
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    checkpoint_dir = os.path.join(config['training']['checkpoint_dir'], f'run_{timestamp}')
+    # Checkpoint dir includes modality for easy identification
+    modality      = config['model'].get('modality', 'image_gaze_text')
+    timestamp     = datetime.now().strftime('%Y%m%d_%H%M%S')
+    checkpoint_dir = os.path.join(
+        config['training']['checkpoint_dir'], f'teacher_{modality}_{timestamp}'
+    )
     os.makedirs(checkpoint_dir, exist_ok=True)
-    
-    # Train
+
     trainer.train(
         train_loader,
         val_loader,
         num_epochs=config['training']['num_epochs'],
         save_dir=checkpoint_dir
     )
+
 
 if __name__ == '__main__':
     main()
