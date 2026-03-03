@@ -18,8 +18,8 @@ model:
   # Modality selection: "image_only" | "image_gaze" | "image_text" | "image_gaze_text"
   # modality: "image_only"
   # modality: "image_gaze"
-  modality: "image_text"
-  # modality: "image_gaze_text"
+  # modality: "image_text"
+  modality: "image_gaze_text"
 
   # BERT freeze configuration (only used when modality is "image_gaze_text")
   # Number of epochs to keep BERT frozen before unfreezing
