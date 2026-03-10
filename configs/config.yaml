@@ -2,7 +2,7 @@
 data:
   dataset_name: "mimic_eye"
   image_size: 224  # ViT standard input size
-  patch_size: 16   # Creates 14×14 = 196 patches
+  patch_size: 16   # Creates 14×14ata = 196 patches
   
   # Gaze processing
   gaze_heatmap_size: 224  # Align with image size
@@ -21,7 +21,7 @@ model:
   # modality: "image_text"
   modality: "image_gaze_text"
 
-  # BERT freeze configuration (only used when modality is "image_gaze_text")
+  # BERT freeze configuration (only used when modality includes text)
   # Number of epochs to keep BERT frozen before unfreezing
   # Set to 0 to train BERT unfrozen from epoch 1
   bert_freeze_epochs: 5
@@ -41,12 +41,34 @@ model:
     lstm_layers: 2
     dropout: 0.3
 
-# Training Configuration (for later)
+# Decoder Configuration
+decoder:
+  # BioGPT model from HuggingFace
+  model_name: "microsoft/biogpt"
+
+  # Projection: maps teacher combined features (3328) → BioGPT hidden dim (1024)
+  input_dim: 3328   # Must match teacher combined_dim for image_gaze_text
+  hidden_dim: 1024  # BioGPT hidden dimension
+
+  # BioGPT layer freezing
+  # BioGPT has 24 transformer layers (0-23)
+  # Freeze the bottom N layers, fine-tune the rest
+  freeze_layers: 12  # Freeze bottom 50% of layers
+
+  # Text generation parameters
+  max_length: 200       # Maximum tokens to generate
+  min_length: 50        # Minimum tokens to generate
+  num_beams: 4          # Beam search width (higher = better quality but slower)
+  no_repeat_ngram_size: 3  # Prevents repeated phrases in output
+  early_stopping: true  # Stop beam search when all beams reach EOS
+
+  dropout: 0.1
+
+# Training Configuration
 training:
   batch_size: 32
   num_epochs: 20
-  # num_epochs: 5  # Start with 5 to test
-  # num_epochs: 2
+  # num_epochs: 2  # Use for quick sanity testing
   learning_rate: 0.0001
   weight_decay: 0.01
   device: 'cuda'  # 'cuda' or 'cpu'
@@ -56,3 +78,8 @@ training:
   # Loss weights
   lambda_gaze_pred: 0.5
   # lambda_classification will be computed as 1.0 - lambda_gaze_pred
+
+  # Decoder training — separate LR since BioGPT is pretrained
+  decoder_learning_rate: 0.00002   # Lower LR for fine-tuning BioGPT
+  # decoder_num_epochs: 20
+  decoder_num_epochs: 2  # Use for quick sanity testing

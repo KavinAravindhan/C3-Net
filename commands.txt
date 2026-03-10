@@ -20,3 +20,5 @@ nohup python3 train.py > z_train_test.log 2>&1 &
 nohup python3 train.py > z_train.log 2>&1 &
 
 nohup python3 train.py > z_train_teacher_image_gaze_text.log 2>&1 &
+
+nohup python3 train_decoder.py > z_train_decoder.log 2>&1 &

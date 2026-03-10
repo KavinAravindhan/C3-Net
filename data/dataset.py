@@ -139,6 +139,7 @@ class MIMICEyeDataset(Dataset):
                 - gaze_seq_length: int
                 - text_token_ids: Tensor [128]
                 - text_attention_mask: Tensor [128]
+                - report_text: str  — raw report text for BioGPT tokenization
                 - label: int (0 or 1)
                 - sample_id: str
         """
@@ -169,7 +170,7 @@ class MIMICEyeDataset(Dataset):
         with open(sample_info['text_path'], 'r', encoding='utf-8') as f:
             text = f.read()
         
-        # Preprocess text
+        # Preprocess text for BioClinicalBERT (teacher encoder)
         # Input: Raw text → Output: token_ids [128], attention_mask [128]
         text_token_ids, text_attention_mask = self.text_preprocessor(text)
         
@@ -180,6 +181,7 @@ class MIMICEyeDataset(Dataset):
             'gaze_seq_length': seq_length,                 # scalar
             'text_token_ids': text_token_ids,              # [128]
             'text_attention_mask': text_attention_mask,    # [128]
+            'report_text': text,                           # str — raw text for BioGPT tokenization  # NEW
             'label': torch.tensor(sample_info['label'], dtype=torch.long),  # scalar
             'sample_id': sample_info['sample_id']
         }
@@ -201,25 +203,28 @@ def collate_fn(batch):
             - gaze_seq_lengths: [B]
             - text_token_ids: [B, 128]
             - text_attention_masks: [B, 128]
+            - report_texts: List[str]  — raw strings for BioGPT tokenization
             - labels: [B]
             - sample_ids: List[str]
     """
-    images = torch.stack([item['image'] for item in batch])  # [B, 3, 224, 224]
-    gaze_heatmaps = torch.stack([item['gaze_heatmap'] for item in batch])  # [B, 224, 224]
-    gaze_sequences = torch.stack([item['gaze_sequence'] for item in batch])  # [B, 50, 3]
-    gaze_seq_lengths = torch.tensor([item['gaze_seq_length'] for item in batch])  # [B]
-    text_token_ids = torch.stack([item['text_token_ids'] for item in batch])  # [B, 128]
-    text_attention_masks = torch.stack([item['text_attention_mask'] for item in batch])  # [B, 128]
-    labels = torch.stack([item['label'] for item in batch])  # [B]
-    sample_ids = [item['sample_id'] for item in batch]
+    images               = torch.stack([item['image'] for item in batch])               # [B, 3, 224, 224]
+    gaze_heatmaps        = torch.stack([item['gaze_heatmap'] for item in batch])        # [B, 224, 224]
+    gaze_sequences       = torch.stack([item['gaze_sequence'] for item in batch])       # [B, 50, 3]
+    gaze_seq_lengths     = torch.tensor([item['gaze_seq_length'] for item in batch])    # [B]
+    text_token_ids       = torch.stack([item['text_token_ids'] for item in batch])      # [B, 128]
+    text_attention_masks = torch.stack([item['text_attention_mask'] for item in batch]) # [B, 128]
+    report_texts         = [item['report_text'] for item in batch]                      # List[str]  # NEW
+    labels               = torch.stack([item['label'] for item in batch])               # [B]
+    sample_ids           = [item['sample_id'] for item in batch]
     
     return {
-        'images': images,
-        'gaze_heatmaps': gaze_heatmaps,
-        'gaze_sequences': gaze_sequences,
-        'gaze_seq_lengths': gaze_seq_lengths,
-        'text_token_ids': text_token_ids,
+        'images':               images,
+        'gaze_heatmaps':        gaze_heatmaps,
+        'gaze_sequences':       gaze_sequences,
+        'gaze_seq_lengths':     gaze_seq_lengths,
+        'text_token_ids':       text_token_ids,
         'text_attention_masks': text_attention_masks,
-        'labels': labels,
-        'sample_ids': sample_ids
+        'report_texts':         report_texts,           # NEW
+        'labels':               labels,
+        'sample_ids':           sample_ids
     }
