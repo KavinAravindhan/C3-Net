@@ -65,6 +65,7 @@ decoder:
   dropout: 0.1
 
 # Training Configuration
+# NOTE: Best model saved by val AUC (not accuracy)
 training:
   batch_size: 32
   num_epochs: 20
