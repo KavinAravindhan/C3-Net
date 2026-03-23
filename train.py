@@ -39,11 +39,6 @@ class C3NetTrainer:
     """
 
     def __init__(self, config, run_name=None):
-        """
-        Args:
-            config:   full config dict (already overridden if called from hparam_search)
-            run_name: optional wandb run name; auto-generated if None
-        """
         self.config = config
 
         self.modality           = config['model'].get('modality', 'image_gaze_text')
@@ -52,7 +47,6 @@ class C3NetTrainer:
         self.uses_gaze          = self.modality in ('image_gaze', 'image_gaze_text')
         self.bert_unfrozen      = False
 
-        # Device
         if config['training']['device'] == 'cuda' and torch.cuda.is_available():
             gpu_id = config['training']['gpu_id']
             self.device = torch.device(f'cuda:{gpu_id}')
@@ -71,17 +65,14 @@ class C3NetTrainer:
             else:
                 print(f"BERT freeze epochs: {self.bert_freeze_epochs}")
 
-        # Model
         print("\n1. Loading MultimodalTeacher...")
         self.teacher = MultimodalTeacher(config=config).to(self.device)
 
-        # Loss
         class_weights = torch.tensor([1.0/0.33, 1.0/0.67]).to(self.device)
         class_weights = class_weights / class_weights.sum() * 2.0
         print(f"\n2. Class weights: Normal={class_weights[0]:.3f}, Abnormal={class_weights[1]:.3f}")
         self.criterion = nn.CrossEntropyLoss(weight=class_weights)
 
-        # Optimizer
         self.lr      = config['training']['learning_rate']
         self.bert_lr = self.lr * 0.1
 
@@ -109,7 +100,6 @@ class C3NetTrainer:
             eta_min=1e-6
         )
 
-        # Metrics tracking
         self.best_val_acc  = 0.0
         self.best_val_f1   = 0.0
         self.best_val_auc  = 0.0
@@ -118,7 +108,6 @@ class C3NetTrainer:
         self.train_history = []
         self.val_history   = []
 
-        # Wandb
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         if run_name is None:
             run_name = f"teacher_{self.modality}_{timestamp}"
@@ -272,6 +261,58 @@ class C3NetTrainer:
         return epoch_loss, epoch_metrics
 
     # ------------------------------------------------------------------
+    def evaluate_test(self, test_loader):
+        """
+        Run evaluation on the test set using the best saved model.
+
+        Loads best_model.pth from save_dir (set during training), runs inference,
+        and returns metrics + raw predicted probabilities for DeLong's test.
+
+        Args:
+            test_loader: DataLoader for test split
+
+        Returns:
+            metrics: dict with accuracy, precision, recall, f1, auc
+            all_probs: list of predicted probabilities (class=1) — needed for DeLong's test
+            all_labels: list of ground truth labels
+        """
+        self.teacher.eval()
+
+        all_labels = []
+        all_preds  = []
+        all_probs  = []
+
+        pbar = tqdm(test_loader, desc="Test Evaluation")
+
+        with torch.no_grad():
+            for batch in pbar:
+                images, gaze_heatmaps, gaze_sequences, gaze_seq_lengths, \
+                text_token_ids, text_attention_masks, labels = self._get_batch_inputs(batch)
+
+                logits, _ = self.teacher(
+                    images, gaze_heatmaps, gaze_sequences, gaze_seq_lengths,
+                    text_token_ids, text_attention_masks
+                )
+
+                probs = torch.softmax(logits, dim=1)[:, 1]
+                preds = torch.argmax(logits, dim=1)
+
+                all_labels += labels.cpu().tolist()
+                all_preds  += preds.cpu().tolist()
+                all_probs  += probs.cpu().tolist()
+
+        metrics = self._compute_metrics(all_labels, all_preds, all_probs)
+
+        print(f"\nTest Set Results:")
+        print(f"  Accuracy:  {metrics['accuracy']*100:.2f}%")
+        print(f"  Precision: {metrics['precision']*100:.2f}%")
+        print(f"  Recall:    {metrics['recall']*100:.2f}%")
+        print(f"  F1:        {metrics['f1']*100:.2f}%")
+        print(f"  AUC:       {metrics['auc']:.4f}")
+
+        return metrics, all_probs, all_labels
+
+    # ------------------------------------------------------------------
     def _unfreeze_bert(self):
         self.teacher.unfreeze_bert()
         self.optimizer.add_param_group({
@@ -284,16 +325,12 @@ class C3NetTrainer:
 
     # ------------------------------------------------------------------
     def train(self, train_loader, val_loader, num_epochs, save_dir='checkpoints',
-              save_periodic_checkpoints=True):
+              save_periodic_checkpoints=True, finish_wandb=True):
         """
         Main training loop.
 
-        Args:
-            save_periodic_checkpoints: if False, skips every-5-epoch saves.
-                                       Set to False during hparam search to save disk space.
-
         Returns:
-            best_metrics: dict with best val metrics (keyed by AUC)
+            best_metrics: dict with best val metrics (selected by AUC)
         """
         os.makedirs(save_dir, exist_ok=True)
 
@@ -317,7 +354,6 @@ class C3NetTrainer:
 
         for epoch in range(num_epochs):
 
-            # Stage transition
             if self.uses_text and not self.bert_unfrozen and epoch == self.bert_freeze_epochs:
                 print(f"\n{'='*80}")
                 print(f"STAGE 2: Unfreezing BERT")
@@ -351,7 +387,6 @@ class C3NetTrainer:
             print(f"  {'AUC':<12} {train_metrics['auc']:>10.4f} {val_metrics['auc']:>10.4f}")
             print(f"  LR: {current_lr:.2e}")
 
-            # ===== Save best model by val AUC =====
             if val_metrics['auc'] > self.best_val_auc:
                 self.best_val_acc = val_metrics['accuracy']
                 self.best_val_f1  = val_metrics['f1']
@@ -363,7 +398,6 @@ class C3NetTrainer:
                 )
                 print(f"\n  ✓ New best model saved! (Val AUC: {val_metrics['auc']:.4f})")
 
-            # Wandb logging
             wandb.log({
                 "epoch": epoch + 1,
                 "learning_rate": current_lr,
@@ -392,7 +426,6 @@ class C3NetTrainer:
             self.train_history.append({'epoch': epoch+1, 'loss': train_loss, **train_metrics})
             self.val_history.append({'epoch': epoch+1, 'loss': val_loss, **val_metrics})
 
-            # Periodic checkpoints (disabled during hparam search)
             if save_periodic_checkpoints and (epoch + 1) % 5 == 0:
                 self.save_checkpoint(
                     os.path.join(save_dir, f'checkpoint_epoch_{epoch+1}.pth'),
@@ -400,7 +433,9 @@ class C3NetTrainer:
                 )
 
         self.save_training_history(save_dir)
-        wandb.finish()
+        # wandb.finish()
+        if finish_wandb:
+            wandb.finish()
 
         print("\n" + "="*80)
         print("Training Complete!")

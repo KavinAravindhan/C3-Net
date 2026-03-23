@@ -1,0 +1,37 @@
+nohup: ignoring input
+================================================================================
+DeLong's Test — C3-Net Modality Comparison
+================================================================================
+Reference: DeLong et al. (1988), Biometrics
+
+Loading predicted probabilities...
+  image_only           — AUC (avg across seeds): 0.8847
+  image_gaze           — AUC (avg across seeds): 0.8847
+  image_text           — AUC (avg across seeds): 0.9473
+  image_gaze_text      — AUC (avg across seeds): 0.9613
+
+================================================================================
+Pairwise DeLong's Test Results
+================================================================================
+
+Modality A             Modality B                AUC A    AUC B        Z    p-value    Sig
+------------------------------------------------------------------------------------------
+image_only             image_gaze               0.8847   0.8847    0.000     1.0000     ns
+image_only             image_text               0.8847   0.9473   -2.247     0.0246      *
+image_only             image_gaze_text          0.8847   0.9613   -2.262     0.0237      *
+image_gaze             image_text               0.8847   0.9473   -1.915     0.0555     ns
+image_gaze             image_gaze_text          0.8847   0.9613   -1.968     0.0491      *
+image_text             image_gaze_text          0.9473   0.9613   -0.824     0.4102     ns
+
+================================================================================
+Key Comparison for Paper: image_only vs image_gaze_text
+================================================================================
+  AUC improvement: 0.8847 → 0.9613
+  Z-statistic: -2.262
+  p-value: 0.0237
+  Significant (p<0.05): True
+
+Full results saved to: /media/16TB_Storage/kavin/models/c3-net/seed_runs/delong_results.json
+
+Significance legend: *** p<0.001  ** p<0.01  * p<0.05  ns not significant
+================================================================================

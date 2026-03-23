@@ -73,7 +73,7 @@ training:
   learning_rate: 0.0001
   weight_decay: 0.01
   device: 'cuda'  # 'cuda' or 'cpu'
-  gpu_id: 1       # 0 or 1 (which GPU to use)
+  gpu_id: 0       # 0 or 1 (which GPU to use)
   checkpoint_dir: '/media/16TB_Storage/kavin/models/c3-net' 
   
   # Loss weights
