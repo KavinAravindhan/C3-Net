@@ -479,8 +479,8 @@ def main():
         config = yaml.safe_load(f)
 
     # Path to the best teacher checkpoint (epoch 10 from ablations)
-    # teacher_checkpoint_path = '/media/16TB_Storage/kavin/models/c3-net/teacher_image_gaze_text_<timestamp>/best_model.pth'
-    teacher_checkpoint_path = '/media/16TB_Storage/kavin/models/c3-net/teacher_20260224_004053/best_model.pth'
+    # teacher_checkpoint_path = '/media/16TB_Storage/kavin/models/c3-net/teacher_20260224_004053/best_model.pth'
+    teacher_checkpoint_path = '/media/16TB_Storage/kavin/models/c3-net/hparam_search/best_image_gaze_text.pth'
 
     print("Loading datasets...")
     train_dataset = MIMICEyeDataset(

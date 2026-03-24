@@ -32,3 +32,8 @@ python3 delong_test.py
 nohup python3 delong_test.py > z_delong_test.log 2>&1 &
 
 nohup python3 train_decoder.py > z_train_decoder.log 2>&1 &
+nohup bash -c 'while nvidia-smi -i 1 | grep -q "python"; do sleep 300; done && python3 train_decoder.py' > z_train_decoder.log 2>&1 &
+
+(c3net) kavin@lambda-aivs-oph:~/C3-Net$ nohup bash -c 'while nvidia-smi -i 1 | grep -q "python"; do sleep 300; done && python3 train_decoder.py' > z_train_decoder.log 2>&1 &
+[1] 1750959
+(c3net) kavin@lambda-aivs-oph:~/C3-Net$ 
