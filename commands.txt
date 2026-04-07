@@ -34,6 +34,9 @@ nohup python3 delong_test.py > z_delong_test.log 2>&1 &
 nohup python3 train_decoder.py > z_train_decoder.log 2>&1 &
 nohup bash -c 'while nvidia-smi -i 1 | grep -q "python"; do sleep 300; done && python3 train_decoder.py' > z_train_decoder.log 2>&1 &
 
-(c3net) kavin@lambda-aivs-oph:~/C3-Net$ nohup bash -c 'while nvidia-smi -i 1 | grep -q "python"; do sleep 300; done && python3 train_decoder.py' > z_train_decoder.log 2>&1 &
-[1] 1750959
-(c3net) kavin@lambda-aivs-oph:~/C3-Net$ 
+(base) kavin@lambda-aivs-oph:~/Downloads$ nohup wget --user=kavin --password='Kavin$2002' \
+>   -O ~/Downloads/mimic-eye.zip \
+>   "https://physionet.org/content/mimic-eye-multimodal-datasets/get-zip/1.0.0/" \
+>   > ~/C3-Net/wget.log 2>&1 &
+[1] 3036797
+(base) kavin@lambda-aivs-oph:~/Downloads$ 
