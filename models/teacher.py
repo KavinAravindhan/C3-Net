@@ -137,6 +137,114 @@ class MultimodalTeacher(nn.Module):
         if self.modality in ('image_text', 'image_gaze_text'):
             print(f"  BERT frozen at init: {freeze_bert_init}")
     
+    def extract_features(self, images, gaze_heatmaps=None, gaze_sequences=None,
+                         gaze_seq_lengths=None, text_token_ids=None, text_attention_masks=None):
+        """
+        Extract combined multimodal features before the classification head.
+        Used for interpretability (t-SNE, GradCAM, probing) and knowledge distillation.
+
+        Args:
+            images:               [B, 3, 224, 224]  — always required
+            gaze_heatmaps:        [B, 224, 224]      — required for image_gaze, image_gaze_text
+            gaze_sequences:       [B, 50, 3]          — required for image_gaze, image_gaze_text
+            gaze_seq_lengths:     [B]                 — required for image_gaze, image_gaze_text
+            text_token_ids:       [B, 128]            — required for image_text, image_gaze_text
+            text_attention_masks: [B, 128]            — required for image_text, image_gaze_text
+
+        Returns:
+            combined:       [B, D]  — D depends on modality (768 / 2048 / 3328)
+            attention_maps: dict with present keys from 'level1' [B,196], 'level2' [B,128,196]
+        """
+
+        attention_maps = {}
+
+        # ===== Image Encoding (always) =====
+        image_patches, image_cls = self.image_encoder(images)
+        # image_patches: [B, 196, 768], image_cls: [B, 768]
+
+        # ===== image_only =====
+        if self.modality == 'image_only':
+            combined = image_cls  # [B, 768]
+
+        # ===== image_gaze =====
+        elif self.modality == 'image_gaze':
+            gaze_weights, gaze_features = self.gaze_encoder(
+                gaze_heatmaps, gaze_sequences, gaze_seq_lengths
+            )
+            # gaze_weights: [B, 196, 1], gaze_features: [B, 512]
+
+            gaze_weighted, attn_level1 = self.level1_fusion(
+                image_patches, image_cls, gaze_weights, gaze_features
+            )
+            # gaze_weighted: [B, 768]
+
+            attention_maps['level1'] = attn_level1  # [B, 196]
+
+            combined = torch.cat([
+                image_cls,      # [B, 768] - raw image semantics
+                gaze_weighted,  # [B, 768] - gaze-guided image features
+                gaze_features   # [B, 512] - temporal gaze pattern
+            ], dim=1)           # [B, 2048]
+
+        # ===== image_text =====
+        elif self.modality == 'image_text':
+            text_embeddings, text_cls = self.text_encoder(
+                text_token_ids, text_attention_masks
+            )
+            # text_embeddings: [B, 128, 768], text_cls: [B, 768]
+
+            # Use image_cls as substitute for gaze_weighted in level2 fusion
+            # since gaze is not available in this modality
+            aligned_features, attn_level2 = self.level2_fusion(
+                text_embeddings, image_patches, image_cls, text_attention_masks
+            )
+            # aligned_features: [B, 512]
+
+            attention_maps['level2'] = attn_level2  # [B, 128, 196]
+
+            combined = torch.cat([
+                image_cls,       # [B, 768] - raw image semantics
+                text_cls,        # [B, 768] - text semantics
+                aligned_features # [B, 512] - text-image aligned features
+            ], dim=1)            # [B, 2048]
+
+        # ===== image_gaze_text =====
+        elif self.modality == 'image_gaze_text':
+            gaze_weights, gaze_features = self.gaze_encoder(
+                gaze_heatmaps, gaze_sequences, gaze_seq_lengths
+            )
+            # gaze_weights: [B, 196, 1], gaze_features: [B, 512]
+
+            # Level 1: Gaze-Guided Fusion
+            gaze_weighted, attn_level1 = self.level1_fusion(
+                image_patches, image_cls, gaze_weights, gaze_features
+            )
+            # gaze_weighted: [B, 768]
+
+            text_embeddings, text_cls = self.text_encoder(
+                text_token_ids, text_attention_masks
+            )
+            # text_embeddings: [B, 128, 768], text_cls: [B, 768]
+
+            # Level 2: Text-Image Alignment
+            aligned_features, attn_level2 = self.level2_fusion(
+                text_embeddings, image_patches, gaze_weighted, text_attention_masks
+            )
+            # aligned_features: [B, 512]
+
+            attention_maps['level1'] = attn_level1  # [B, 196]
+            attention_maps['level2'] = attn_level2  # [B, 128, 196]
+
+            combined = torch.cat([
+                image_cls,          # [B, 768] - raw image semantics
+                gaze_weighted,      # [B, 768] - gaze-guided image features
+                text_cls,           # [B, 768] - text semantics
+                gaze_features,      # [B, 512] - temporal gaze pattern
+                aligned_features    # [B, 512] - text-image aligned features
+            ], dim=1)               # [B, 3328]
+
+        return combined, attention_maps
+
     def forward(self, images, gaze_heatmaps=None, gaze_sequences=None, gaze_seq_lengths=None,
                 text_token_ids=None, text_attention_masks=None):
         """
@@ -152,97 +260,15 @@ class MultimodalTeacher(nn.Module):
             logits:         [B, 2]
             attention_maps: dict with present keys from 'level1' [B,196], 'level2' [B,128,196]
         """
-        
-        attention_maps = {}
-        
-        # ===== Image Encoding (always) =====
-        image_patches, image_cls = self.image_encoder(images)
-        # image_patches: [B, 196, 768], image_cls: [B, 768]
-        
-        # ===== image_only =====
-        if self.modality == 'image_only':
-            combined = image_cls  # [B, 768]
-        
-        # ===== image_gaze =====
-        elif self.modality == 'image_gaze':
-            gaze_weights, gaze_features = self.gaze_encoder(
-                gaze_heatmaps, gaze_sequences, gaze_seq_lengths
-            )
-            # gaze_weights: [B, 196, 1], gaze_features: [B, 512]
-            
-            gaze_weighted, attn_level1 = self.level1_fusion(
-                image_patches, image_cls, gaze_weights, gaze_features
-            )
-            # gaze_weighted: [B, 768]
-            
-            attention_maps['level1'] = attn_level1  # [B, 196]
-            
-            combined = torch.cat([
-                image_cls,      # [B, 768] - raw image semantics
-                gaze_weighted,  # [B, 768] - gaze-guided image features
-                gaze_features   # [B, 512] - temporal gaze pattern
-            ], dim=1)           # [B, 2048]
-        
-        # ===== image_text =====
-        elif self.modality == 'image_text':
-            text_embeddings, text_cls = self.text_encoder(
-                text_token_ids, text_attention_masks
-            )
-            # text_embeddings: [B, 128, 768], text_cls: [B, 768]
-            
-            # Use image_cls as substitute for gaze_weighted in level2 fusion
-            # since gaze is not available in this modality
-            aligned_features, attn_level2 = self.level2_fusion(
-                text_embeddings, image_patches, image_cls, text_attention_masks
-            )
-            # aligned_features: [B, 512]
-            
-            attention_maps['level2'] = attn_level2  # [B, 128, 196]
-            
-            combined = torch.cat([
-                image_cls,       # [B, 768] - raw image semantics
-                text_cls,        # [B, 768] - text semantics
-                aligned_features # [B, 512] - text-image aligned features
-            ], dim=1)            # [B, 2048]
-        
-        # ===== image_gaze_text =====
-        elif self.modality == 'image_gaze_text':
-            gaze_weights, gaze_features = self.gaze_encoder(
-                gaze_heatmaps, gaze_sequences, gaze_seq_lengths
-            )
-            # gaze_weights: [B, 196, 1], gaze_features: [B, 512]
-            
-            # Level 1: Gaze-Guided Fusion
-            gaze_weighted, attn_level1 = self.level1_fusion(
-                image_patches, image_cls, gaze_weights, gaze_features
-            )
-            # gaze_weighted: [B, 768]
-            
-            text_embeddings, text_cls = self.text_encoder(
-                text_token_ids, text_attention_masks
-            )
-            # text_embeddings: [B, 128, 768], text_cls: [B, 768]
-            
-            # Level 2: Text-Image Alignment
-            aligned_features, attn_level2 = self.level2_fusion(
-                text_embeddings, image_patches, gaze_weighted, text_attention_masks
-            )
-            # aligned_features: [B, 512]
-            
-            attention_maps['level1'] = attn_level1  # [B, 196]
-            attention_maps['level2'] = attn_level2  # [B, 128, 196]
-            
-            combined = torch.cat([
-                image_cls,          # [B, 768] - raw image semantics
-                gaze_weighted,      # [B, 768] - gaze-guided image features
-                text_cls,           # [B, 768] - text semantics
-                gaze_features,      # [B, 512] - temporal gaze pattern
-                aligned_features    # [B, 512] - text-image aligned features
-            ], dim=1)               # [B, 3328]
-        
+
+        combined, attention_maps = self.extract_features(
+            images, gaze_heatmaps, gaze_sequences, gaze_seq_lengths,
+            text_token_ids, text_attention_masks
+        )
+
         # ===== Classify =====
         logits = self.classifier(combined)  # [B, 2]
-        
+
         return logits, attention_maps
     
     def freeze_bert(self):

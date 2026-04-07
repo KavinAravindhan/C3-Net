@@ -40,3 +40,14 @@ nohup bash -c 'while nvidia-smi -i 1 | grep -q "python"; do sleep 300; done && p
 >   > ~/C3-Net/wget.log 2>&1 &
 [1] 3036797
 (base) kavin@lambda-aivs-oph:~/Downloads$ 
+
+
+(c3net) kavin@lambda-aivs-oph:~/C3-Net$ nohup bash -c '
+> while nvidia-smi -i 1 | grep -q "python"; do sleep 300; done &&
+> python interpretability/tsne_features.py > z_tsne.log 2>&1 &&
+> python interpretability/gradcam_vit.py > z_gradcam.log 2>&1 &&
+> python interpretability/biogpt_attention_rollout.py > z_rollout.log 2>&1
+> ' &
+[1] 3061324
+nohup: ignoring input and appending output to 'nohup.out'
+(c3net) kavin@lambda-aivs-oph:~/C3-Net$ 
