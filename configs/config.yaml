@@ -2,10 +2,10 @@
 data:
   dataset_name: "mimic_eye"
   image_size: 224  # ViT standard input size
-  patch_size: 16   # Creates 14×14ata = 196 patches
+  patch_size: 16   # Creates 14×14 = 196 patches
   
   # Gaze processing
-  gaze_heatmap_size: 224  # Align with image size
+  gaze_heatmap_size: 224  # Full-resolution heatmap; downsampled to [196] patches in GazePreprocessor
   max_fixations: 50       # Maximum fixation sequence length
   fixation_sigma: 10      # Gaussian kernel sigma for heatmap generation
 
@@ -15,17 +15,20 @@ model:
   num_classes: 2
   dropout: 0.3
 
+  # Pipeline selector: false = BioClinicalBERT + BioGPT (old), true = MedGemma (new)
+  use_medgemma: false
+
   # Modality selection: "image_only" | "image_gaze" | "image_text" | "image_gaze_text"
   # modality: "image_only"
   # modality: "image_gaze"
   # modality: "image_text"
   modality: "image_gaze_text"
 
-  # BERT freeze configuration (only used when modality includes text)
+  # BERT freeze configuration (only used when modality includes text and use_medgemma: false)
   # Number of epochs to keep BERT frozen before unfreezing
   # Set to 0 to train BERT unfrozen from epoch 1
   bert_freeze_epochs: 5
-  
+
   # Image Encoder (ViT)
   image_encoder:
     type: "vit_base_patch16_224"
@@ -33,7 +36,7 @@ model:
     embed_dim: 768
     num_heads: 12
     num_layers: 12
-    
+
   # Gaze Encoder
   gaze_encoder:
     spatial_hidden_dim: 256
@@ -41,9 +44,16 @@ model:
     lstm_layers: 2
     dropout: 0.3
 
+  # MedGemma Configuration (only used when use_medgemma: true)
+  medgemma:
+    model_name: 'google/medgemma-4b-it'
+    max_length: 256
+    freeze_vision_tower: true   # MedGemma has its own SigLIP tower — we use our gaze-weighted ViT instead
+    freeze_layers: 18           # Freeze bottom ~75% of Gemma layers (24 total), fine-tune top 6
+
 # Decoder Configuration
 decoder:
-  # BioGPT model from HuggingFace
+  # BioGPT model from HuggingFace (only used when use_medgemma: false)
   model_name: "microsoft/biogpt"
 
   # Projection: maps teacher combined features (3328) → BioGPT hidden dim (1024)
@@ -64,6 +74,10 @@ decoder:
 
   dropout: 0.1
 
+  # Gaze ablation: set to false to zero out gaze conditioning before decoder input
+  # Allows comparing generation quality with vs without gaze guidance
+  use_gaze_conditioning: true
+
 # Training Configuration
 # NOTE: Best model saved by val AUC (not accuracy)
 training:
@@ -80,7 +94,7 @@ training:
   lambda_gaze_pred: 0.5
   # lambda_classification will be computed as 1.0 - lambda_gaze_pred
 
-  # Decoder training — separate LR since BioGPT is pretrained
+  # Decoder training — separate LR since BioGPT is pretrained (use_medgemma: false)
   decoder_learning_rate: 0.00002   # Lower LR for fine-tuning BioGPT
   decoder_num_epochs: 20
   # decoder_num_epochs: 2  # Use for quick sanity testing
