@@ -1,0 +1,49 @@
+(c3net) kavin@lambda-aivs-oph:~/C3-Net$ python3 explore_mimic_eye.py 
+======================================================================
+MIMIC-Eye Dataset Exploration
+======================================================================
+
+Total patient folders found: 3192
+
+──────────────────────────────────────────────────────────────────────
+PATIENT COVERAGE
+──────────────────────────────────────────────────────────────────────
+  REFLACX only     : 2154
+  EyeGaze only     : 993
+  Both             : 45
+  Neither          : 0
+  Has CXR-JPG      : 3192
+  Has CXR-DICOM txt: 3192
+  Total CXR images : 6292
+
+──────────────────────────────────────────────────────────────────────
+REFLACX MODALITY COVERAGE
+──────────────────────────────────────────────────────────────────────
+  Total REFLACX IDs (sessions)  : 3052
+  With transcription.txt        : 3032
+  Empty transcription.txt       : 0
+  With fixations.csv            : 3032
+  With gaze.csv                 : 3032
+
+──────────────────────────────────────────────────────────────────────
+EYEGAZE MODALITY COVERAGE
+──────────────────────────────────────────────────────────────────────
+  Patients with fixations.csv   : 1038
+  DICOMs with transcript.json   : 1080
+
+──────────────────────────────────────────────────────────────────────
+SAMPLE REFLACX TRANSCRIPTION
+──────────────────────────────────────────────────────────────────────
+  Patient : patient_10002428
+  ID      : P300R081391
+  Text    : left picc line tip is in the left brachiocephalic vein. there are bilateral pleural effusions and likely atelectasis versus consolidation. no pneumothorax. the heart is normal size. pulmonary vessels are normal. no acute osseous abnormality.
+
+──────────────────────────────────────────────────────────────────────
+SAMPLE EYEGAZE TRANSCRIPT.JSON
+──────────────────────────────────────────────────────────────────────
+  Patient : patient_10002430
+  DICOM   : 4873aa08-977bfd31-fb492e64-6ef432d1-3f12cbe3
+  Content : {'full_text': ' sternotomy wires with cardiac clips. post surgical changes in the right lower lung. aortic calcifications. cardiomegaly. blunting of both costrophrenic angles suggesting pleural fluid or scarring. suspected hyperinflated lungs.', 'time_stamped_text': [{'begin_time': 1.8, 'end_time': 
+
+======================================================================
+(c3net) kavin@lambda-aivs-oph:~/C3-Net$ 
