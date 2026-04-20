@@ -1,4 +1,3 @@
-(c3net) kavin@lambda-aivs-oph:~/C3-Net$ python3 explore_mimic_eye.py 
 ======================================================================
 MIMIC-Eye Dataset Exploration
 ======================================================================
@@ -46,4 +45,3 @@ SAMPLE EYEGAZE TRANSCRIPT.JSON
   Content : {'full_text': ' sternotomy wires with cardiac clips. post surgical changes in the right lower lung. aortic calcifications. cardiomegaly. blunting of both costrophrenic angles suggesting pleural fluid or scarring. suspected hyperinflated lungs.', 'time_stamped_text': [{'begin_time': 1.8, 'end_time': 
 
 ======================================================================
-(c3net) kavin@lambda-aivs-oph:~/C3-Net$ 

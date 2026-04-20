@@ -1,3 +1,6 @@
+# Retired 
+# Use data/explore_mimic_eye.py
+
 import os
 import pandas as pd
 from collections import defaultdict
