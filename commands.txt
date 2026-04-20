@@ -41,7 +41,7 @@ Downloading MIMIC-EYE as a ZIP:
 nohup wget --user=kavin --password='<password>' \
     -O ~/Downloads/mimic-eye.zip \
     "https://physionet.org/content/mimic-eye-multimodal-datasets/get-zip/1.0.0/" \
-    >> ~/C3-Net/wget.log 2>&1 &
+    > ~/C3-Net/wget.log 2>&1 &
 
 Resume downloading MIMIC-EYE as a ZIP:
 
@@ -62,3 +62,9 @@ nohup wget -c --user=kavin --password='Kavin$2002' \
     -O /media/16TB_Storage/kavin/dataset/reflacx-xray-localization.zip \
     "https://physionet.org/content/reflacx-xray-localization/get-zip/1.0.0/" \
     >> ~/C3-Net/reflacx_download.log 2>&1 &
+
+UNZIP REFLACX:
+
+nohup unzip /media/16TB_Storage/kavin/dataset/reflacx-xray-localization.zip \
+  -d /media/16TB_Storage/kavin/dataset/ \
+  > ~/C3-Net/unzip_reflacx.log 2>&1 &
