@@ -1,0 +1,33 @@
+======================================================================
+MIMIC-Eye Adapter: REFLACX + EyeGaze → C3-Net
+======================================================================
+
+Loading label sources...
+  EyeGaze label map: 1083 DICOM IDs
+  REFLACX metadata columns: ['Unnamed: 0', 'id', 'split', 'eye_tracking_data_discarded', 'image', 'dicom_id', 'subject_id', 'image_size_x', 'image_size_y', 'Airway wall thickening', 'Atelectasis', 'Consolidation', 'Emphysema', 'Enlarged cardiac silhouette', 'Fibrosis', 'Fracture', 'Groundglass opacity', 'Mass', 'Nodule', 'Other', 'Pleural effusion', 'Pleural thickening', 'Pneumothorax', 'Pulmonary edema', 'Quality issue', 'Support devices', 'Wide mediastinum', 'Abnormal mediastinal contour', 'Acute fracture', 'Enlarged hilum', 'Hiatal hernia', 'High lung volume / emphysema', 'Interstitial lung disease', 'Lung nodule or mass', 'Pleural abnormality']
+  REFLACX id→dicom map: 3052 sessions
+
+Found 3192 patient directories
+
+Processing patients: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 3192/3192 [00:25<00:00, 126.45it/s]
+
+======================================================================
+PROCESSING COMPLETE
+======================================================================
+  REFLACX sessions processed : 3032
+  EyeGaze sessions processed : 1032
+  Total samples              : 4064
+
+Skipped:
+  No image found    : 0
+  No fixations      : 20
+  No text           : 5
+  No label          : 0
+
+Train: 3213 (Normal: 1059, Abnormal: 2154)
+
+Val: 426 (Normal: 116, Abnormal: 310)
+
+Test: 425 (Normal: 118, Abnormal: 307)
+
+Output: /media/16TB_Storage/kavin/dataset/processed_mimic_eye
