@@ -16,7 +16,7 @@ model:
   dropout: 0.3
 
   # Pipeline selector: false = BioClinicalBERT + BioGPT (old), true = MedGemma (new)
-  use_medgemma: false
+  use_medgemma: true
 
   # Modality selection: "image_only" | "image_gaze" | "image_text" | "image_gaze_text"
   # modality: "image_only"
