@@ -56,8 +56,8 @@ decoder:
   # BioGPT model from HuggingFace (only used when use_medgemma: false)
   model_name: "microsoft/biogpt"
 
-  # Projection: maps teacher combined features (3328) → BioGPT hidden dim (1024)
-  input_dim: 3328   # Must match teacher combined_dim for image_gaze_text
+  # Projection: maps teacher combined features → BioGPT hidden dim (1024)
+  input_dim: 2048  # Must match MODALITY_DIMS in teacher.py for image_gaze_text
   hidden_dim: 1024  # BioGPT hidden dimension
 
   # BioGPT layer freezing
@@ -88,13 +88,28 @@ training:
   weight_decay: 0.01
   device: 'cuda'  # 'cuda' or 'cpu'
   gpu_id: 1       # 0 or 1 (which GPU to use)
-  checkpoint_dir: '/media/16TB_Storage/kavin/models/c3-net' 
-  
-  # Loss weights
-  lambda_gaze_pred: 0.5
-  # lambda_classification will be computed as 1.0 - lambda_gaze_pred
+  checkpoint_dir: '/media/16TB_Storage/kavin/models/c3-net'
 
-  # Decoder training — separate LR since BioGPT is pretrained (use_medgemma: false)
-  decoder_learning_rate: 0.00002   # Lower LR for fine-tuning BioGPT
+  # ── MedGemma pipeline loss weights (use_medgemma: true) ──────────────
+  # Stage 1: GazePredictor MSE loss only — no weighting needed
+  # Stage 2: joint generation + classification
+  lambda_gen: 0.7   # Generation cross-entropy (primary task)
+  lambda_cls: 0.3   # Auxiliary classification loss
+
+  # Stage 1 training (GazePredictor)
+  gaze_predictor_epochs: 5          # Epochs to train GazePredictor before Stage 2
+  gaze_predictor_lr: 0.0001         # LR for GazePredictor stage
+
+  # Stage 2 training (MedGemma decoder + classification)
+  medgemma_lr: 0.00002              # Lower LR for fine-tuning MedGemma layers
+  medgemma_epochs: 20               # Epochs for Stage 2
+  # medgemma_epochs: 2              # Use for quick sanity testing
+
+  # ── BioGPT pipeline loss weights (use_medgemma: false) ───────────────
+  lambda_gaze_pred: 0.5             # Gaze prediction loss weight
+  # lambda_classification = 1.0 - lambda_gaze_pred
+
+  # Decoder training — separate LR since BioGPT is pretrained
+  decoder_learning_rate: 0.00002
   decoder_num_epochs: 20
-  # decoder_num_epochs: 2  # Use for quick sanity testing
+  # decoder_num_epochs: 2           # Use for quick sanity testing
