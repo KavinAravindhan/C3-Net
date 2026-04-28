@@ -15,6 +15,7 @@ import numpy as np
 from data.dataset import MIMICEyeDataset, collate_fn
 from models.teacher import MultimodalTeacher
 from models.medgemma_model import MedGemmaModel
+from utils.visualization import save_epoch_attention
 
 load_dotenv()
 
@@ -180,7 +181,7 @@ class C3NetTrainer:
         gaze_heatmaps    = batch['gaze_heatmaps'].to(self.device)    if self.uses_gaze else None
         gaze_sequences   = batch['gaze_sequences'].to(self.device)   if self.uses_gaze else None
         gaze_seq_lengths = batch['gaze_seq_lengths']                 if self.uses_gaze else None
-        text_token_ids       = batch['text_token_ids'].to(self.device)      if self.uses_text else None
+        text_token_ids       = batch['text_token_ids'].to(self.device)       if self.uses_text else None
         text_attention_masks = batch['text_attention_masks'].to(self.device) if self.uses_text else None
 
         return images, gaze_heatmaps, gaze_sequences, gaze_seq_lengths, \
@@ -427,6 +428,14 @@ class C3NetTrainer:
                     epoch, val_metrics
                 )
 
+            # Save attention visualizations every 5 epochs
+            if (epoch + 1) % 5 == 0:
+                save_epoch_attention(
+                    self.teacher, val_loader, self.device,
+                    save_dir=save_dir, epoch=epoch+1,
+                    use_medgemma=False
+                )
+
         self.save_training_history(save_dir)
         if finish_wandb:
             wandb.finish()
@@ -520,9 +529,9 @@ class MedGemmaTrainer:
         self.lambda_cls = config['training'].get('lambda_cls', 0.3)
 
         # Learning rates
-        self.base_lr        = config['training']['learning_rate']
-        self.medgemma_lr    = config['training'].get('medgemma_lr', 0.00002)
-        self.gaze_pred_lr   = config['training'].get('gaze_predictor_lr', 0.0001)
+        self.base_lr      = config['training']['learning_rate']
+        self.medgemma_lr  = config['training'].get('medgemma_lr', 0.00002)
+        self.gaze_pred_lr = config['training'].get('gaze_predictor_lr', 0.0001)
 
         # Stage epoch counts
         self.gaze_pred_epochs = config['training'].get('gaze_predictor_epochs', 5)
@@ -546,18 +555,18 @@ class MedGemmaTrainer:
             project="c3_net",
             name=run_name,
             config={
-                "model":               "MedGemmaModel",
-                "pipeline":            "MedGemma",
-                "modality":            self.modality,
-                "base_lr":             self.base_lr,
-                "medgemma_lr":         self.medgemma_lr,
-                "gaze_predictor_lr":   self.gaze_pred_lr,
-                "gaze_pred_epochs":    self.gaze_pred_epochs,
-                "medgemma_epochs":     self.medgemma_epochs,
-                "lambda_gen":          self.lambda_gen,
-                "lambda_cls":          self.lambda_cls,
-                "batch_size":          config['training']['batch_size'],
-                "weight_decay":        config['training']['weight_decay'],
+                "model":                 "MedGemmaModel",
+                "pipeline":              "MedGemma",
+                "modality":              self.modality,
+                "base_lr":               self.base_lr,
+                "medgemma_lr":           self.medgemma_lr,
+                "gaze_predictor_lr":     self.gaze_pred_lr,
+                "gaze_pred_epochs":      self.gaze_pred_epochs,
+                "medgemma_epochs":       self.medgemma_epochs,
+                "lambda_gen":            self.lambda_gen,
+                "lambda_cls":            self.lambda_cls,
+                "batch_size":            config['training']['batch_size'],
+                "weight_decay":          config['training']['weight_decay'],
                 "use_gaze_conditioning": config['decoder'].get('use_gaze_conditioning', True),
             }
         )
@@ -620,7 +629,7 @@ class MedGemmaTrainer:
     def train_gaze_predictor(self, train_loader, val_loader, save_dir):
         """
         Stage 1: Train GazePredictor supervised on real gaze heatmaps.
-        All model components except GazePredictor are frozen.
+        All model components except GazePredictor and ViT are frozen.
         Loss: MSE between predicted and real [B, 196] heatmaps.
         """
         os.makedirs(save_dir, exist_ok=True)
@@ -717,9 +726,6 @@ class MedGemmaTrainer:
         for param in self.model.gaze_predictor.parameters():
             param.requires_grad = False
 
-        # Unfreeze everything else that should train
-        # (MedGemma layers above freeze_layers, adapter, fusion, classifier)
-        # These were already set correctly in MedGemmaModel.__init__
         # Re-enable ViT training
         for param in self.model.image_encoder.parameters():
             param.requires_grad = True
@@ -803,10 +809,10 @@ class MedGemmaTrainer:
 
                 running_acc = np.mean(np.array(all_preds) == np.array(all_labels))
                 pbar.set_postfix({
-                    'loss':     f'{loss.item():.4f}',
-                    'gen':      f'{gen_loss.item():.4f}',
-                    'cls':      f'{cls_loss.item():.4f}',
-                    'acc':      f'{running_acc*100:.2f}%'
+                    'loss': f'{loss.item():.4f}',
+                    'gen':  f'{gen_loss.item():.4f}',
+                    'cls':  f'{cls_loss.item():.4f}',
+                    'acc':  f'{running_acc*100:.2f}%'
                 })
                 wandb.log({
                     "stage2/batch_loss":     loss.item(),
@@ -871,6 +877,20 @@ class MedGemmaTrainer:
 
             self.train_history.append({'epoch': epoch+1, 'loss': train_loss, **train_metrics})
             self.val_history.append({'epoch': epoch+1, 'loss': val_loss, **val_metrics})
+
+            if (epoch + 1) % 5 == 0:
+                self.save_checkpoint(
+                    os.path.join(save_dir, f'checkpoint_epoch_{epoch+1}.pth'),
+                    epoch, val_metrics
+                )
+
+            # Save attention visualizations every 5 epochs
+            if (epoch + 1) % 5 == 0:
+                save_epoch_attention(
+                    self.model, val_loader, self.device,
+                    save_dir=save_dir, epoch=epoch+1,
+                    use_medgemma=True
+                )
 
         self.save_training_history(save_dir)
         return self.best_metrics
@@ -1012,10 +1032,10 @@ class MedGemmaTrainer:
     # ------------------------------------------------------------------
     def save_checkpoint(self, path, epoch, val_metrics):
         torch.save({
-            'epoch':                epoch,
-            'modality':             self.modality,
-            'model_state_dict':     self.model.state_dict(),
-            'val_metrics':          val_metrics,
+            'epoch':            epoch,
+            'modality':         self.modality,
+            'model_state_dict': self.model.state_dict(),
+            'val_metrics':      val_metrics,
         }, path)
 
     # ------------------------------------------------------------------

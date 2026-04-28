@@ -201,7 +201,7 @@ def run_search(modalities, base_config, num_configs=NUM_CONFIGS):
 
             # Train
             try:
-                trainer      = C3NetTrainer(cfg, run_name=run_name)
+                trainer = C3NetTrainer(cfg, train_dataset=train_loader.dataset, run_name=run_name)
                 best_metrics = trainer.train(
                     train_loader,
                     val_loader,
