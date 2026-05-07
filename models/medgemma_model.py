@@ -1,7 +1,7 @@
 import os
 import torch
 import torch.nn as nn
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, AutoModelForImageTextToText
 
 from .encoders import ImageEncoder, GazeEncoder, GazePredictor, ViTToMedGemmaAdapter
 from .attention import GazeGuidedFusion
@@ -47,20 +47,27 @@ class MedGemmaModel(nn.Module):
         config['decoder']['use_gaze_conditioning'] = False zeros out the
         gaze-weighted component before the adapter, allowing comparison
         of generation quality with vs without gaze guidance.
+
+    Internal MedGemma structure (Gemma3ForConditionalGeneration):
+        self.medgemma.model.language_model.embed_tokens
+        self.medgemma.model.language_model.layers
+        self.medgemma.model.language_model.norm
+        self.medgemma.model.vision_tower   (frozen — we use our own ViT)
+        self.medgemma.lm_head
     """
 
     def __init__(self, config=None):
         super(MedGemmaModel, self).__init__()
 
         # Hyperparameters
-        num_classes          = config['model'].get('num_classes', 2)               if config else 2
-        dropout              = config['model'].get('dropout', 0.3)                 if config else 0.3
-        medgemma_name        = config['model']['medgemma']['model_name']           if config else 'google/medgemma-4b-it'
-        medgemma_max_length  = config['model']['medgemma']['max_length']           if config else 256
-        freeze_vision_tower  = config['model']['medgemma']['freeze_vision_tower']  if config else True
-        medgemma_freeze_layers = config['model']['medgemma']['freeze_layers']      if config else 18
+        num_classes            = config['model'].get('num_classes', 2)               if config else 2
+        dropout                = config['model'].get('dropout', 0.3)                 if config else 0.3
+        medgemma_name          = config['model']['medgemma']['model_name']           if config else 'google/medgemma-4b-it'
+        medgemma_max_length    = config['model']['medgemma']['max_length']           if config else 256
+        freeze_vision_tower    = config['model']['medgemma']['freeze_vision_tower']  if config else True
+        medgemma_freeze_layers = config['model']['medgemma']['freeze_layers']        if config else 18
         self.use_gaze_conditioning = config['decoder'].get('use_gaze_conditioning', True) if config else True
-        self.max_length      = medgemma_max_length
+        self.max_length        = medgemma_max_length
 
         # ===== Image Encoder =====
         self.image_encoder = ImageEncoder(
@@ -103,28 +110,31 @@ class MedGemmaModel(nn.Module):
         )
 
         # ===== MedGemma Decoder =====
-        print(f"Loading MedGemma decoder: {medgemma_name}")
+        # Load with AutoModelForImageTextToText — correct class for Gemma3ForConditionalGeneration
+        print(f"Loading MedGemma: {medgemma_name}")
         token = os.environ.get('HF_TOKEN')
-        from transformers import AutoModelForCausalLM
-        self.medgemma = AutoModelForCausalLM.from_pretrained(
+        self.medgemma = AutoModelForImageTextToText.from_pretrained(
             medgemma_name,
             token=token,
             trust_remote_code=True,
         )
 
         # Freeze MedGemma's own vision tower — we use our gaze-weighted ViT instead
-        if freeze_vision_tower and hasattr(self.medgemma, 'vision_tower'):
-            for param in self.medgemma.vision_tower.parameters():
+        # Internal path: self.medgemma.model.vision_tower
+        if freeze_vision_tower and hasattr(self.medgemma.model, 'vision_tower'):
+            for param in self.medgemma.model.vision_tower.parameters():
                 param.requires_grad = False
             print(f"  MedGemma vision tower frozen")
 
         # Freeze embedding layer
-        for param in self.medgemma.language_model.model.embed_tokens.parameters():
+        # Internal path: self.medgemma.model.language_model.embed_tokens
+        for param in self.medgemma.model.language_model.embed_tokens.parameters():
             param.requires_grad = False
 
         # Freeze bottom N transformer layers, fine-tune the rest
-        total_layers = len(self.medgemma.language_model.model.layers)
-        for i, layer in enumerate(self.medgemma.language_model.model.layers):
+        # Internal path: self.medgemma.model.language_model.layers
+        total_layers = len(self.medgemma.model.language_model.layers)
+        for i, layer in enumerate(self.medgemma.model.language_model.layers):
             if i < medgemma_freeze_layers:
                 for param in layer.parameters():
                     param.requires_grad = False
@@ -133,9 +143,10 @@ class MedGemmaModel(nn.Module):
                     param.requires_grad = True
 
         # Always train final norm and LM head
-        for param in self.medgemma.language_model.model.norm.parameters():
+        # Internal paths: self.medgemma.model.language_model.norm, self.medgemma.lm_head
+        for param in self.medgemma.model.language_model.norm.parameters():
             param.requires_grad = True
-        for param in self.medgemma.language_model.lm_head.parameters():
+        for param in self.medgemma.lm_head.parameters():
             param.requires_grad = True
 
         frozen_count    = medgemma_freeze_layers
@@ -194,7 +205,7 @@ class MedGemmaModel(nn.Module):
             # Inference: generate synthetic gaze from image patches
             predicted_weights = self.gaze_predictor(image_patches)  # [B, 196]
             # Reshape to [B, 196, 1] for GazeGuidedFusion
-            gaze_weights = predicted_weights.unsqueeze(-1)           # [B, 196, 1]
+            gaze_weights  = predicted_weights.unsqueeze(-1)          # [B, 196, 1]
             # Use zero temporal features since we have no fixation sequence
             gaze_features = torch.zeros(
                 images.size(0), 512, device=images.device
@@ -257,7 +268,8 @@ class MedGemmaModel(nn.Module):
         # ===== MedGemma generation loss =====
         # Prepend adapted image features as prefix token to token embeddings
         prefix       = adapted.unsqueeze(1)  # [B, 1, 2048]
-        token_embeds = self.medgemma.language_model.model.embed_tokens(
+        # Internal path for embed_tokens: self.medgemma.model.language_model.embed_tokens
+        token_embeds = self.medgemma.model.language_model.embed_tokens(
             report_token_ids
         )                                    # [B, seq_len, 2048]
 
@@ -343,7 +355,8 @@ class MedGemmaModel(nn.Module):
             fill_value=self.tokenizer.bos_token_id,
             device=images.device
         )
-        bos_embeds = self.medgemma.language_model.model.embed_tokens(bos_ids)
+        # Internal path for embed_tokens
+        bos_embeds = self.medgemma.model.language_model.embed_tokens(bos_ids)
         # bos_embeds: [B, 1, 2048]
 
         prefix        = adapted.unsqueeze(1)                          # [B, 1, 2048]

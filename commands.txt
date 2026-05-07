@@ -68,3 +68,10 @@ UNZIP REFLACX:
 nohup unzip /media/16TB_Storage/kavin/dataset/reflacx-xray-localization.zip \
   -d /media/16TB_Storage/kavin/dataset/ \
   > ~/C3-Net/unzip_reflacx.log 2>&1 &
+
+
+nohup bash -c 'while nvidia-smi -i 1 --query-compute-apps=pid --format=csv,noheader | grep -q "[0-9]"; do sleep 60; done && python3 train.py' > z_train_sanity.log 2>&1 &
+
+(c3net) kavin@lambda-aivs-oph:~/C3-Net$ nohup bash -c 'while nvidia-smi -i 1 --query-compute-apps=pid --format=csv,noheader | grep -q "[0-9]"; do sleep 60; done && python3 train.py' > z_train_sanity.log 2>&1 &
+[1] 1809546
+(c3net) kavin@lambda-aivs-oph:~/C3-Net$ 

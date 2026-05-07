@@ -360,13 +360,9 @@ class MedGemmaTextEncoder(nn.Module):
     as the text encoder. Interface mirrors TextEncoder so teacher.py requires
     minimal branching.
 
-    Key differences vs TextEncoder:
-        - Hidden size: 2048 (Gemma 4B) vs 768 (BERT)
-        - Vocab: ~256k SentencePiece vs ~30k WordPiece
-        - No CLS token — we use mean pooling over non-padding tokens as the
-          global representation, which is standard for decoder-style models
-        - The MedGemma vision tower (SigLIP) is NOT loaded here — we use our
-          own gaze-weighted ViT instead
+    Internal MedGemma structure (Gemma3ForConditionalGeneration):
+        full_model.model.language_model  — Gemma transformer backbone
+        full_model.model.vision_tower    — SigLIP (not loaded here)
 
     Output shapes:
         - token_embeddings: [B, seq_len, 2048]
@@ -384,19 +380,18 @@ class MedGemmaTextEncoder(nn.Module):
 
         token = os.environ.get('HF_TOKEN')
 
-        # Load only the language model component of MedGemma
-        # We set is_text_only=True equivalent by loading just the LM backbone
+        # Load with AutoModelForImageTextToText — correct class for Gemma3ForConditionalGeneration
         print(f"Loading MedGemma language model: {model_name}")
-        from transformers import AutoModelForCausalLM
-        full_model = AutoModelForCausalLM.from_pretrained(
+        from transformers import AutoModelForImageTextToText
+        full_model = AutoModelForImageTextToText.from_pretrained(
             model_name,
             token=token,
             trust_remote_code=True,
         )
 
-        # Extract only the Gemma transformer backbone (no LM head, no vision tower)
-        # MedGemma 4B structure: model.language_model.model (Gemma layers)
-        self.gemma = full_model.language_model.model
+        # Extract only the Gemma transformer backbone
+        # Internal path: full_model.model.language_model
+        self.gemma       = full_model.model.language_model
         self.hidden_size = self.gemma.config.hidden_size  # 2048
 
         # Free the rest of the full model from memory
@@ -448,10 +443,10 @@ class MedGemmaTextEncoder(nn.Module):
 
         # Mean pooling over non-padding tokens
         # pooled = Σ(token_embeddings * mask) / Σ(mask)
-        mask_expanded = attention_mask.unsqueeze(-1).float()              # [B, seq_len, 1]
-        sum_embeddings = (token_embeddings * mask_expanded).sum(dim=1)   # [B, 2048]
-        sum_mask       = mask_expanded.sum(dim=1).clamp(min=1e-9)        # [B, 1]
-        pooled         = sum_embeddings / sum_mask                        # [B, 2048]
+        mask_expanded  = attention_mask.unsqueeze(-1).float()              # [B, seq_len, 1]
+        sum_embeddings = (token_embeddings * mask_expanded).sum(dim=1)    # [B, 2048]
+        sum_mask       = mask_expanded.sum(dim=1).clamp(min=1e-9)         # [B, 1]
+        pooled         = sum_embeddings / sum_mask                         # [B, 2048]
 
         return token_embeddings, pooled
 
